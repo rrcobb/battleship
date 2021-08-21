@@ -4,6 +4,7 @@ use winit::event::{Event, VirtualKeyCode};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 use winit_input_helper::WinitInputHelper;
+use std::iter::{once, repeat};
 
 fn main() -> Result<(), Error> {
     let event_loop = EventLoop::new();
@@ -132,7 +133,9 @@ impl World {
     /// Draw the `World` state to the frame buffer.
     fn draw(&self, frame: &mut [u8]) {
         let top_margin = 190;
+        //
         // top frame pixels - dark green
+        //
         for i in 0..top_margin {
             let i = i as usize;
             let w = WIDTH as usize;
@@ -146,32 +149,43 @@ impl World {
         }
 
         let grid_width = 301;
-        let cell_width = 30;
         let grid_margin = 40;
+        let cell_width = 30;
+        let cell_margin = 4;
 
+        //
         // draw two grids
-        for row in 0..grid_width {
-            let i = (row + top_margin) as usize;
+        //
+        for line in 0..grid_width {
+            let i = (line + top_margin) as usize;
+            let row = line / 30;
             let w = WIDTH as usize;
-            let grid_pixels: Vec<u8> = if row % cell_width == 0 {
-                std::iter::repeat(GRAY).take(grid_width).flatten().collect()
+            let grid_pixels: Vec<u8> = if line % cell_width == 0 {
+                repeat(GRAY).take(grid_width).flatten().collect()
             } else {
-                std::iter::once(GRAY).chain(std::iter::repeat(BLUE).take(29)).cycle().take(grid_width).flatten().collect()
+                if line > cell_margin && line < cell_width - cell_margin {
+                    // filled in
+                    once(GRAY)
+                        .chain(repeat(BLUE).take(cell_margin))
+                        .chain(repeat(GRAY).take(cell_width - 1 - cell_margin * 2))
+                        .chain(repeat(BLUE).take(cell_margin))
+                        .cycle().take(grid_width).flatten().collect()
+                } else {
+                    // empty
+                    once(GRAY).chain(repeat(BLUE).take(29)).cycle().take(grid_width).flatten().collect()
+                }
             };
 
-            let margin: Vec<u8> = std::iter::repeat(DARK_GREEN).take(grid_margin).flatten().collect();
+            let margin: Vec<u8> = repeat(DARK_GREEN).take(grid_margin).flatten().collect();
             let pixels: Vec<u8> = margin.iter()
                 .chain(grid_pixels.iter())
                 .chain(margin.iter())
                 .chain(grid_pixels.iter())
                 .chain(margin.iter())
                 .cloned()
+                .take(w * 4)
                 .collect(); 
             
-            let pixels = pixels.iter()
-                .cloned()
-                .take(w * 4)
-                .collect::<Vec<_>>();
             frame[i * w * 4..(i + 1) * w * 4].copy_from_slice(&pixels);
         }
         // 150px of empty (dark green)
