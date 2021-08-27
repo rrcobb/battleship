@@ -1,10 +1,10 @@
 use pixels::{Error, Pixels, SurfaceTexture};
+use std::iter::{once, repeat};
 use winit::dpi::LogicalSize;
 use winit::event::{Event, VirtualKeyCode};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 use winit_input_helper::WinitInputHelper;
-use std::iter::{once, repeat};
 
 fn main() -> Result<(), Error> {
     let event_loop = EventLoop::new();
@@ -69,6 +69,7 @@ struct World {
     other_player: Player,
 }
 
+// 0-indexed grid positions
 struct Cell {
     x: u8,
     y: u8,
@@ -120,26 +121,33 @@ impl Player {
     }
 }
 
-static WHITE: [u8; 4] = [0xff, 0xff, 0xff, 0xff]; // FFFFFF
-static BLACK: [u8; 4] = [0x00, 0x00, 0x00, 0xff];
-static DARK_GREEN: [u8; 4] = [0x20, 0x2a, 0x25, 0xff]; // 202A25
-static GRAY: [u8; 4] = [0xEB, 0xE9, 0xE9, 0xff]; //EBE9E9
-static GREEN: [u8; 4] = [0x00, 0xA8, 0x78, 0xff]; // 00A878
-static YELLOW: [u8; 4] = [0xf8, 0xf3, 0x2b, 0xff]; // F8F32B
-static BLUE: [u8; 4] = [0x6c, 0xcf, 0xf6, 0xff]; // 6CCFF6
-static FLAME: [u8; 4] = [0xcf, 0x5c, 0x36, 0xff]; // CF5C36
+// type alias for colors
+type Color = [u8; 4];
+
+const WHITE: Color = [0xff, 0xff, 0xff, 0xff]; // FFFFFF
+const BLACK: Color = [0x00, 0x00, 0x00, 0xff];
+const DARK_GREEN: Color = [0x20, 0x2a, 0x25, 0xff]; // 202A25
+const GRAY: Color = [0xEB, 0xE9, 0xE9, 0xff]; //EBE9E9
+const GREEN: Color = [0x00, 0xA8, 0x78, 0xff]; // 00A878
+const YELLOW: Color = [0xf8, 0xf3, 0x2b, 0xff]; // F8F32B
+const BLUE: Color = [0x6c, 0xcf, 0xf6, 0xff]; // 6CCFF6
+const FLAME: Color = [0xcf, 0x5c, 0x36, 0xff]; // CF5C36
+
+const GRID_LINES: Color = GRAY;
+const GRID_EMPTY: Color = BLUE;
+const BACKGROUND: Color = DARK_GREEN;
 
 impl World {
     /// Draw the `World` state to the frame buffer.
     fn draw(&self, frame: &mut [u8]) {
         let top_margin = 190;
         //
-        // top frame pixels - dark green
+        // top frame pixels
         //
         for i in 0..top_margin {
             let i = i as usize;
             let w = WIDTH as usize;
-            let pixels = DARK_GREEN
+            let pixels = BACKGROUND
                 .iter()
                 .cycle()
                 .cloned()
@@ -151,54 +159,90 @@ impl World {
         let grid_width = 301;
         let grid_margin = 40;
         let cell_width = 30;
-        let cell_margin = 4;
 
         //
         // draw two grids
         //
         for line in 0..grid_width {
             let i = (line + top_margin) as usize;
-            let row = line / 30;
             let w = WIDTH as usize;
             let grid_pixels: Vec<u8> = if line % cell_width == 0 {
-                repeat(GRAY).take(grid_width).flatten().collect()
+                repeat(GRID_LINES).take(grid_width).flatten().collect()
             } else {
-                if line > cell_margin && line < cell_width - cell_margin {
-                    // filled in
-                    once(GRAY)
-                        .chain(repeat(BLUE).take(cell_margin))
-                        .chain(repeat(GRAY).take(cell_width - 1 - cell_margin * 2))
-                        .chain(repeat(BLUE).take(cell_margin))
-                        .cycle().take(grid_width).flatten().collect()
-                } else {
-                    // empty
-                    once(GRAY).chain(repeat(BLUE).take(29)).cycle().take(grid_width).flatten().collect()
-                }
+                // empty
+                once(GRID_LINES)
+                    .chain(repeat(GRID_EMPTY).take(29))
+                    .cycle()
+                    .take(grid_width)
+                    .flatten()
+                    .collect()
             };
 
-            let margin: Vec<u8> = repeat(DARK_GREEN).take(grid_margin).flatten().collect();
-            let pixels: Vec<u8> = margin.iter()
+            let margin: Vec<u8> = repeat(BACKGROUND).take(grid_margin).flatten().collect();
+            let pixels: Vec<u8> = margin
+                .iter()
                 .chain(grid_pixels.iter())
                 .chain(margin.iter())
                 .chain(grid_pixels.iter())
                 .chain(margin.iter())
                 .cloned()
                 .take(w * 4)
-                .collect(); 
-            
+                .collect();
+
             frame[i * w * 4..(i + 1) * w * 4].copy_from_slice(&pixels);
         }
         // 150px of empty (dark green)
-        for i in top_margin+grid_width..HEIGHT as usize {
+        for i in top_margin + grid_width..HEIGHT as usize {
             let i = i as usize;
             let w = WIDTH as usize;
-            let pixels = DARK_GREEN
+            let pixels = BACKGROUND
                 .iter()
                 .cycle()
                 .cloned()
                 .take(w * 4)
                 .collect::<Vec<_>>();
             frame[i * w * 4..(i + 1) * w * 4].copy_from_slice(&pixels);
+        }
+
+        for ship in self.this_player.ships.iter() {
+            for cell in &ship.cells {
+                World::fill_cell(cell, frame, WHITE, true);
+            }
+        }
+
+        for ship in self.other_player.ships.iter() {
+            for cell in &ship.cells {
+                World::fill_cell(cell, frame, GRAY, false);
+            }
+        }
+    }
+
+    fn fill_cell(cell: &Cell, frame: &mut [u8], color: Color, this_player: bool) {
+        let grid_width = 301;
+        let grid_margin = 40;
+        let cell_width = 30;
+        let cell_margin = 4;
+        let top_margin = 190;
+
+        // cell width and height
+        let filled_len = cell_width - 2 * cell_margin;
+        // one line _across_ within a filled cell
+        let line: Vec<u8> = repeat(color).take(filled_len).flatten().collect();
+
+        // whose cell is this?
+        let grid_offset = if this_player {
+            // left: just need grid_margin
+            grid_margin
+        } else {
+            grid_width + 2 * grid_margin
+        };
+
+        for i in 0..filled_len {
+            let y_offset =
+                (top_margin + i + cell_width * cell.y as usize + cell_margin) * 4 * WIDTH as usize;
+            let x_offset = (grid_offset + cell_width * cell.x as usize + cell_margin) * 4;
+            let cell_start = y_offset + x_offset;
+            frame[cell_start..cell_start + filled_len * 4].copy_from_slice(&line);
         }
     }
 
