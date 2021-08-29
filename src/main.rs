@@ -73,6 +73,18 @@ struct Cell {
     y: u8,
 }
 
+impl Cell {
+    fn shift(&mut self, direction: Direction) {
+        let (x_shift, y_shift) = direction.xy();
+        let x = x_shift + self.x as i8;
+        let y = y_shift + self.y as i8;
+        if x >= 0 && x < CELL_COUNT as i8 && y >= 0 && y < CELL_COUNT as i8 {
+            self.x = x as u8;
+            self.y = y as u8;
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 enum ShipStatus {
     Hidden,
@@ -195,7 +207,7 @@ impl Ship {
             (0, -1) => (-1, -1),
             (1, 0) => (1, -1),
             (0, 1) => (1, 1),
-            _ => panic!("adjacent cells were not adjacent!")
+            _ => panic!("adjacent cells were not adjacent!"),
         };
         let mut valid = true;
         let mut shifted: Vec<Cell> = self.cells.clone();
@@ -229,20 +241,31 @@ impl Ship {
     }
 }
 
+#[derive(Debug, PartialEq)]
+enum PlayerStatus {
+    Placing,
+    Aiming,
+    Waiting,
+}
+
 struct Player {
+    status: PlayerStatus,
     ships: [Ship; 5],
+    target: Cell,
     shots_taken: Vec<Cell>,
 }
 
 impl Player {
     fn new() -> Self {
         Player {
+            status: PlayerStatus::Placing,
             ships: Ship::starting_five(),
+            target: Cell { x: 4, y: 5 },
             shots_taken: Vec::new(),
         }
     }
 
-    fn placing_ship(&mut self) -> Option<&mut Ship> {
+    fn ship_to_place(&mut self) -> Option<&mut Ship> {
         self.ships
             .iter_mut()
             .find(|ship| ship.status == ShipStatus::Placing)
@@ -351,10 +374,12 @@ impl World {
             }
         }
 
-        for ship in self.other_player.ships.iter() {
-            for cell in &ship.cells {
-                World::fill_cell(cell, frame, GRAY, false);
-            }
+        for shot in self.this_player.shots_taken.iter() {
+            World::fill_cell(shot, frame, GRAY, false);
+        }
+
+        if self.this_player.status == PlayerStatus::Aiming {
+            World::fill_cell(&self.this_player.target, frame, FLAME, false);
         }
     }
 
@@ -390,7 +415,37 @@ impl World {
 
     /// Update the `World` internal state
     fn update(&mut self, input: &WinitInputHelper) {
-        let ship = self.this_player.placing_ship().unwrap();
+        use PlayerStatus::*;
+        match self.this_player.status {
+            Placing => self.place_ships(input),
+            Aiming => self.aim(input),
+            Waiting => (),
+        }
+    }
+
+    fn aim(&mut self, input: &WinitInputHelper) {
+        let target = &mut self.this_player.target;
+        if input.key_pressed(VirtualKeyCode::Down) {
+            target.shift(Direction::Down);
+        }
+        if input.key_pressed(VirtualKeyCode::Up) {
+            target.shift(Direction::Up);
+        }
+        if input.key_pressed(VirtualKeyCode::Right) {
+            target.shift(Direction::Right);
+        }
+        if input.key_pressed(VirtualKeyCode::Left) {
+            target.shift(Direction::Left);
+        }
+        if input.key_pressed(VirtualKeyCode::Return) || input.key_pressed(VirtualKeyCode::Space) {
+            self.this_player.shots_taken.push(target.clone());
+            self.this_player.target = Cell { x: 4, y: 5 };
+            self.this_player.status = PlayerStatus::Waiting;
+        }
+    }
+
+    fn place_ships(&mut self, input: &WinitInputHelper) {
+        let ship = self.this_player.ship_to_place().unwrap();
         if input.key_pressed(VirtualKeyCode::Down) {
             ship.shift(Direction::Down);
         }
@@ -413,7 +468,10 @@ impl World {
                 .ships
                 .iter_mut()
                 .find(|s| s.status == ShipStatus::Hidden);
-            next.map(|s| s.placing());
+            match next {
+                Some(ship) => ship.placing(),
+                None => self.this_player.status = PlayerStatus::Aiming,
+            }
         }
     }
 }

@@ -1,29 +1,36 @@
 # Battleship
 
-- ship placement / setup
-  - DONE move boats with arrow keys
-  - DONE confirm with key
-  - DONE select which boat to move somehow (iteratively)
-  - DONE turn ships
-  - how to confirm done?
-  - how to edit after placed?
-- DONE ship status (placing, locked, hidden)
-- prevent ships from locking when they intersect
-- figure out turn taking
-    - move target? with arrow keys?
 - how to draw text
     - choose a library!
     - draw help text especially
     - also, grid labels
-- get grids rendering per player
-    - DONE rendering empty grids
-    - DONE render ships on grids
-        - but, actually the ships instead of just squares
-        - nice to have: bmps for the ships
+- local version: how to play against an AI or something?
+- hits / misses on ships
+- sunk ship messages
+- prevent ships from locking when they intersect
 - movement rerendering is... slow somehow?
-- local version
 - internet version
 - Build for windows, mac, web?
 - web server for:
   - get latest binary
   - find active players to start a game
+- nice to have: bmps for the ships
+- sounds with https://docs.rs/rodio/0.14.0/rodio/ or something
+- how to confirm done?
+- for now, just.. when the last ship is placed
+- how to edit after placed?
+
+- ship placement / setup
+  - DONE move boats with arrow keys
+  - DONE confirm with key
+  - DONE select which boat to move somehow (iteratively)
+  - DONE turn ships
+- DONE ship status (placing, locked, hidden)
+- figure out turn taking
+    - DONE move target with arrow keys
+    - DONE select with space or enter
+    - DONE adds to shots taken
+- get grids rendering per player
+    - DONE rendering empty grids
+    - DONE render ships on grids
+        - but, actually the ships instead of just squares
