@@ -6,6 +6,8 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 use winit_input_helper::WinitInputHelper;
 
+use rusttype::{point, Font, PositionedGlyph, Scale};
+
 fn main() -> Result<(), Error> {
     let event_loop = EventLoop::new();
     let mut input = WinitInputHelper::new();
@@ -25,11 +27,13 @@ fn main() -> Result<(), Error> {
         Pixels::new(WIDTH, HEIGHT, surface_texture)?
     };
     let mut world = World::new();
+    let font_data = include_bytes!("./source-code-pro-regular.ttf");
+    let font = Font::try_from_bytes(font_data as &[u8]).unwrap();
 
     event_loop.run(move |event, _, control_flow| {
         // Draw the current frame
         if let Event::RedrawRequested(_) = event {
-            world.draw(pixels.get_frame());
+            world.draw(pixels.get_frame(), &font);
             if pixels
                 .render()
                 .map_err(|e| println!("pixels.render() failed: {}", e))
@@ -301,7 +305,7 @@ const CELL_COUNT: usize = 10;
 
 impl World {
     /// Draw the `World` state to the frame buffer.
-    fn draw(&self, frame: &mut [u8]) {
+    fn draw(&self, frame: &mut [u8], font: &Font) {
         //
         // top frame pixels
         //
@@ -380,6 +384,42 @@ impl World {
 
         if self.this_player.status == PlayerStatus::Aiming {
             World::fill_cell(&self.this_player.target, frame, FLAME, false);
+        }
+
+        // Desired font pixel height
+        let height: f32 = 80.0;
+        let text = "Battleship";
+        World::draw_text(frame, text, font, GREEN, height, (0.0, 0.0));
+    }
+
+    fn draw_text(frame: &mut [u8], text: &str, font: &Font, color: Color, height: f32, offset: (f32, f32)) {
+        let scale = Scale {
+            x: height, 
+            y: height,
+        };
+
+        let v_metrics = font.v_metrics(scale);
+        let offset = point(offset.0 + 0.0, offset.1 + v_metrics.ascent);
+
+        let glyphs: Vec<_> = font.layout(text, scale, offset).collect();
+
+        for glyph in glyphs {
+            if let Some(bounding_box) = glyph.pixel_bounding_box() {
+                glyph.draw(|x, y, v| {
+                    // Offset the position by the glyph bounding box
+                    let x_offset = x + bounding_box.min.x as u32;
+                    let y_offset = y + bounding_box.min.y as u32;
+                    let index: usize = ((y_offset * WIDTH + x_offset) * 4) as usize;
+                    // blend the colors
+                    let blended_color = [
+                        (BACKGROUND[0] as f32 * (1.0 - v) + color[0] as f32 * v) as u8,
+                        (BACKGROUND[1] as f32 * (1.0 - v) + color[1] as f32 * v) as u8,
+                        (BACKGROUND[2] as f32 * (1.0 - v) + color[2] as f32 * v) as u8,
+                        0xff,
+                    ];
+                    frame[index..index+4].copy_from_slice(&blended_color);
+                });
+            }
         }
     }
 
