@@ -1,13 +1,26 @@
 # Battleship
 
+- ship placement / setup
+  - DONE move boats with arrow keys
+  - DONE confirm with key
+  - DONE select which boat to move somehow (iteratively)
+  - DONE turn ships
+  - how to confirm done?
+  - how to edit after placed?
+- DONE ship status (placing, locked, hidden)
+- prevent ships from locking when they intersect
+- figure out turn taking
+    - move target? with arrow keys?
 - how to draw text
+    - choose a library!
+    - draw help text especially
+    - also, grid labels
 - get grids rendering per player
     - DONE rendering empty grids
-    - TODO render ships on grids
+    - DONE render ships on grids
         - but, actually the ships instead of just squares
-- figure out turn taking
-    - move boats with arrow keys?
-    - move target? with arrow keys?
+        - nice to have: bmps for the ships
+- movement rerendering is... slow somehow?
 - local version
 - internet version
 - Build for windows, mac, web?

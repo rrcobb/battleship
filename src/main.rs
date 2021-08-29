@@ -60,9 +60,6 @@ fn main() -> Result<(), Error> {
     });
 }
 
-const WIDTH: u32 = 720;
-const HEIGHT: u32 = 600;
-
 /// Representation of the application state
 struct World {
     this_player: Player,
@@ -70,40 +67,165 @@ struct World {
 }
 
 // 0-indexed grid positions
+#[derive(Debug, Clone)]
 struct Cell {
     x: u8,
     y: u8,
 }
 
+#[derive(Debug, PartialEq)]
+enum ShipStatus {
+    Hidden,
+    Placing,
+    Locked,
+}
+
 struct Ship {
+    status: ShipStatus,
     len: u8,
     cells: Vec<Cell>,
 }
 
+#[derive(Debug)]
+enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl Direction {
+    fn xy(&self) -> (i8, i8) {
+        use Direction::*;
+        match self {
+            Up => (0, -1),
+            Down => (0, 1),
+            Left => (-1, 0),
+            Right => (1, 0),
+        }
+    }
+}
+
 impl Ship {
     fn starting_five() -> [Self; 5] {
+        use ShipStatus::*;
         [
             Ship {
+                status: Placing,
                 len: 2,
                 cells: vec![Cell { x: 0, y: 0 }, Cell { x: 1, y: 0 }],
             },
             Ship {
+                status: Hidden,
                 len: 3,
-                cells: Vec::new(),
+                cells: vec![
+                    Cell { x: 0, y: 0 },
+                    Cell { x: 1, y: 0 },
+                    Cell { x: 2, y: 0 },
+                ],
             },
             Ship {
+                status: Hidden,
                 len: 3,
-                cells: Vec::new(),
+                cells: vec![
+                    Cell { x: 0, y: 0 },
+                    Cell { x: 1, y: 0 },
+                    Cell { x: 2, y: 0 },
+                    Cell { x: 3, y: 0 },
+                ],
             },
             Ship {
+                status: Hidden,
                 len: 4,
-                cells: Vec::new(),
+                cells: vec![
+                    Cell { x: 0, y: 0 },
+                    Cell { x: 1, y: 0 },
+                    Cell { x: 2, y: 0 },
+                    Cell { x: 3, y: 0 },
+                ],
             },
             Ship {
+                status: Hidden,
                 len: 5,
-                cells: Vec::new(),
+                cells: vec![
+                    Cell { x: 0, y: 0 },
+                    Cell { x: 1, y: 0 },
+                    Cell { x: 2, y: 0 },
+                    Cell { x: 3, y: 0 },
+                    Cell { x: 4, y: 0 },
+                ],
             },
         ]
+    }
+
+    fn shift(&mut self, direction: Direction) {
+        let (x, y) = direction.xy();
+        // move each cell in the direction it should be moved
+        let mut valid = true;
+        let mut shifted: Vec<Cell> = self.cells.clone();
+
+        for (i, cell) in self.cells.iter().enumerate() {
+            let x = x + cell.x as i8;
+            let y = y + cell.y as i8;
+            // if any cells end up out of bounds (< 0 or > grid_width), cancel the whole move operation
+            if x >= 0 && x < CELL_COUNT as i8 && y >= 0 && y < CELL_COUNT as i8 {
+                shifted[i] = Cell {
+                    x: x as u8,
+                    y: y as u8,
+                };
+            } else {
+                valid = false;
+                break;
+            }
+        }
+
+        if valid {
+            self.cells = shifted;
+        }
+    }
+
+    fn rotate_right(&mut self) {
+        // for the cell i
+        // move x,y i times
+        // direction-finding: difference between cells[0] and cells[1]
+        let one = &self.cells[0];
+        let two = &self.cells[1];
+        let (x, y): (i8, i8) = match (one.x as i8 - two.x as i8, one.y as i8 - two.y as i8) {
+            (-1, 0) => (-1, 1),
+            (0, -1) => (-1, -1),
+            (1, 0) => (1, -1),
+            (0, 1) => (1, 1),
+            _ => panic!("adjacent cells were not adjacent!")
+        };
+        let mut valid = true;
+        let mut shifted: Vec<Cell> = self.cells.clone();
+        for (i, cell) in self.cells.iter().enumerate() {
+            let n: i8 = i as i8;
+            let x = n * x + cell.x as i8;
+            let y = n * y + cell.y as i8;
+            // if any cells end up out of bounds (< 0 or > grid_width), cancel the whole operation
+            if x >= 0 && x < CELL_COUNT as i8 && y >= 0 && y < CELL_COUNT as i8 {
+                shifted[i] = Cell {
+                    x: x as u8,
+                    y: y as u8,
+                };
+            } else {
+                valid = false;
+                break;
+            }
+        }
+
+        if valid {
+            self.cells = shifted;
+        }
+    }
+
+    fn placing(&mut self) {
+        self.status = ShipStatus::Placing;
+    }
+
+    fn lock(&mut self) {
+        self.status = ShipStatus::Locked;
     }
 }
 
@@ -119,11 +241,18 @@ impl Player {
             shots_taken: Vec::new(),
         }
     }
+
+    fn placing_ship(&mut self) -> Option<&mut Ship> {
+        self.ships
+            .iter_mut()
+            .find(|ship| ship.status == ShipStatus::Placing)
+    }
 }
 
 // type alias for colors
 type Color = [u8; 4];
 
+// consts for colors
 const WHITE: Color = [0xff, 0xff, 0xff, 0xff]; // FFFFFF
 const BLACK: Color = [0x00, 0x00, 0x00, 0xff];
 const DARK_GREEN: Color = [0x20, 0x2a, 0x25, 0xff]; // 202A25
@@ -137,14 +266,23 @@ const GRID_LINES: Color = GRAY;
 const GRID_EMPTY: Color = BLUE;
 const BACKGROUND: Color = DARK_GREEN;
 
+// frame size consts
+const WIDTH: u32 = 720;
+const HEIGHT: u32 = 600;
+const TOP_MARGIN: usize = 190;
+const GRID_WIDTH: usize = 301;
+const GRID_MARGIN: usize = 40;
+const CELL_WIDTH: usize = 30;
+const CELL_MARGIN: usize = 4;
+const CELL_COUNT: usize = 10;
+
 impl World {
     /// Draw the `World` state to the frame buffer.
     fn draw(&self, frame: &mut [u8]) {
-        let top_margin = 190;
         //
         // top frame pixels
         //
-        for i in 0..top_margin {
+        for i in 0..TOP_MARGIN {
             let i = i as usize;
             let w = WIDTH as usize;
             let pixels = BACKGROUND
@@ -155,30 +293,25 @@ impl World {
                 .collect::<Vec<_>>();
             frame[i * w * 4..(i + 1) * w * 4].copy_from_slice(&pixels);
         }
-
-        let grid_width = 301;
-        let grid_margin = 40;
-        let cell_width = 30;
-
         //
         // draw two grids
         //
-        for line in 0..grid_width {
-            let i = (line + top_margin) as usize;
+        for line in 0..GRID_WIDTH {
+            let i = (line + TOP_MARGIN) as usize;
             let w = WIDTH as usize;
-            let grid_pixels: Vec<u8> = if line % cell_width == 0 {
-                repeat(GRID_LINES).take(grid_width).flatten().collect()
+            let grid_pixels: Vec<u8> = if line % CELL_WIDTH == 0 {
+                repeat(GRID_LINES).take(GRID_WIDTH).flatten().collect()
             } else {
                 // empty
                 once(GRID_LINES)
                     .chain(repeat(GRID_EMPTY).take(29))
                     .cycle()
-                    .take(grid_width)
+                    .take(GRID_WIDTH)
                     .flatten()
                     .collect()
             };
 
-            let margin: Vec<u8> = repeat(BACKGROUND).take(grid_margin).flatten().collect();
+            let margin: Vec<u8> = repeat(BACKGROUND).take(GRID_MARGIN).flatten().collect();
             let pixels: Vec<u8> = margin
                 .iter()
                 .chain(grid_pixels.iter())
@@ -192,7 +325,7 @@ impl World {
             frame[i * w * 4..(i + 1) * w * 4].copy_from_slice(&pixels);
         }
         // 150px of empty (dark green)
-        for i in top_margin + grid_width..HEIGHT as usize {
+        for i in TOP_MARGIN + GRID_WIDTH..HEIGHT as usize {
             let i = i as usize;
             let w = WIDTH as usize;
             let pixels = BACKGROUND
@@ -205,8 +338,16 @@ impl World {
         }
 
         for ship in self.this_player.ships.iter() {
-            for cell in &ship.cells {
-                World::fill_cell(cell, frame, WHITE, true);
+            use ShipStatus::*;
+            let color = match ship.status {
+                Placing => YELLOW,
+                Locked => WHITE,
+                _ => GRID_EMPTY,
+            };
+            if ship.status != Hidden {
+                for cell in &ship.cells {
+                    World::fill_cell(cell, frame, color, true);
+                }
             }
         }
 
@@ -218,29 +359,22 @@ impl World {
     }
 
     fn fill_cell(cell: &Cell, frame: &mut [u8], color: Color, this_player: bool) {
-        let grid_width = 301;
-        let grid_margin = 40;
-        let cell_width = 30;
-        let cell_margin = 4;
-        let top_margin = 190;
-
         // cell width and height
-        let filled_len = cell_width - 2 * cell_margin;
+        let filled_len = CELL_WIDTH - 2 * CELL_MARGIN;
         // one line _across_ within a filled cell
         let line: Vec<u8> = repeat(color).take(filled_len).flatten().collect();
 
         // whose cell is this?
         let grid_offset = if this_player {
-            // left: just need grid_margin
-            grid_margin
+            GRID_MARGIN
         } else {
-            grid_width + 2 * grid_margin
+            GRID_WIDTH + 2 * GRID_MARGIN
         };
 
         for i in 0..filled_len {
             let y_offset =
-                (top_margin + i + cell_width * cell.y as usize + cell_margin) * 4 * WIDTH as usize;
-            let x_offset = (grid_offset + cell_width * cell.x as usize + cell_margin) * 4;
+                (TOP_MARGIN + i + CELL_WIDTH * cell.y as usize + CELL_MARGIN) * 4 * WIDTH as usize;
+            let x_offset = (grid_offset + CELL_WIDTH * cell.x as usize + CELL_MARGIN) * 4;
             let cell_start = y_offset + x_offset;
             frame[cell_start..cell_start + filled_len * 4].copy_from_slice(&line);
         }
@@ -256,9 +390,30 @@ impl World {
 
     /// Update the `World` internal state
     fn update(&mut self, input: &WinitInputHelper) {
-        if input.key_pressed(VirtualKeyCode::Down) {}
-        if input.key_pressed(VirtualKeyCode::Up) {}
-        if input.key_pressed(VirtualKeyCode::Right) {}
-        if input.key_pressed(VirtualKeyCode::Left) {}
+        let ship = self.this_player.placing_ship().unwrap();
+        if input.key_pressed(VirtualKeyCode::Down) {
+            ship.shift(Direction::Down);
+        }
+        if input.key_pressed(VirtualKeyCode::Up) {
+            ship.shift(Direction::Up);
+        }
+        if input.key_pressed(VirtualKeyCode::Right) {
+            ship.shift(Direction::Right);
+        }
+        if input.key_pressed(VirtualKeyCode::Left) {
+            ship.shift(Direction::Left);
+        }
+        if input.key_pressed(VirtualKeyCode::Space) {
+            ship.rotate_right();
+        }
+        if input.key_pressed(VirtualKeyCode::Return) {
+            ship.lock();
+            let next = self
+                .this_player
+                .ships
+                .iter_mut()
+                .find(|s| s.status == ShipStatus::Hidden);
+            next.map(|s| s.placing());
+        }
     }
 }
