@@ -386,10 +386,28 @@ impl World {
             World::fill_cell(&self.this_player.target, frame, FLAME, false);
         }
 
-        // Desired font pixel height
-        let height: f32 = 80.0;
-        let text = "Battleship";
-        World::draw_text(frame, text, font, GREEN, height, (0.0, 0.0));
+        // title text
+        World::draw_text(frame, "Battleship", font, GREEN, 60.0, (20.0, 0.0));
+
+        match self.this_player.status {
+            PlayerStatus::Placing => {
+                World::draw_text(frame, "Place your ships!", font, WHITE, 40.0, (220.0, 60.0));
+                let height = 24.0;
+                for (i, text) in ["arrow keys to move", "space to rotate", "enter to place"].iter().enumerate() {
+                    let y = 100.0 + i as f32 * height;
+                    World::draw_text(frame, text, font, WHITE, height, (220.0, y));
+                }
+            },
+            PlayerStatus::Aiming => {
+                World::draw_text(frame, "Take aim!", font, WHITE, 40.0, (220.0, 60.0));
+                let height = 24.0;
+                for (i, text) in ["arrow keys to move", "space or enter to fire"].iter().enumerate() {
+                    let y = 100.0 + i as f32 * height;
+                    World::draw_text(frame, text, font, WHITE, height, (220.0, y));
+                }
+            }
+            _ => {},
+        }
     }
 
     fn draw_text(frame: &mut [u8], text: &str, font: &Font, color: Color, height: f32, offset: (f32, f32)) {

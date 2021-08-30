@@ -1,12 +1,26 @@
 # Battleship
 
-- how to draw text
-    - choose a library!
-    - draw help text especially
-    - also, grid labels
+- draw text
+    - DONE choose a library!
+    - DONE draw title
+    - add help text
+        - Place your ships!
+          - arrow keys to move
+          - space to rotate
+          - return to place
+        - Take aim
+        - Waiting for your opponent to (place their ships)
+        - Waiting for your opponent to (fire)
+        - Miss...
+        - Hit!
+        - sunk ship messages
+        - Hit! You sunk their x
+    - add grid labels
+    - add 'score' - ships remaining
+
 - local version: how to play against an AI or something?
+- local version: play on the same screen
 - hits / misses on ships
-- sunk ship messages
 - prevent ships from locking when they intersect
 - movement rerendering is... slow somehow?
 - internet version
