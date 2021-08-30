@@ -304,8 +304,7 @@ const CELL_MARGIN: usize = 4;
 const CELL_COUNT: usize = 10;
 
 impl World {
-    /// Draw the `World` state to the frame buffer.
-    fn draw(&self, frame: &mut [u8], font: &Font) {
+    fn clear_top(frame: &mut [u8]) {
         //
         // top frame pixels
         //
@@ -320,6 +319,9 @@ impl World {
                 .collect::<Vec<_>>();
             frame[i * w * 4..(i + 1) * w * 4].copy_from_slice(&pixels);
         }
+    }
+
+    fn clear_grids(frame: &mut [u8]) {
         //
         // draw two grids
         //
@@ -351,6 +353,9 @@ impl World {
 
             frame[i * w * 4..(i + 1) * w * 4].copy_from_slice(&pixels);
         }
+    }
+
+    fn clear_bottom(frame: &mut [u8]) {
         // 150px of empty (dark green)
         for i in TOP_MARGIN + GRID_WIDTH..HEIGHT as usize {
             let i = i as usize;
@@ -363,7 +368,9 @@ impl World {
                 .collect::<Vec<_>>();
             frame[i * w * 4..(i + 1) * w * 4].copy_from_slice(&pixels);
         }
+    }
 
+    fn draw_ships(&self, frame: &mut [u8]) {
         for ship in self.this_player.ships.iter() {
             use ShipStatus::*;
             let color = match ship.status {
@@ -377,15 +384,21 @@ impl World {
                 }
             }
         }
+    }
 
+    fn draw_shots(&self, frame: &mut [u8]) {
         for shot in self.this_player.shots_taken.iter() {
             World::fill_cell(shot, frame, GRAY, false);
         }
+    }
 
+    fn draw_target(&self, frame: &mut [u8]) {
         if self.this_player.status == PlayerStatus::Aiming {
             World::fill_cell(&self.this_player.target, frame, FLAME, false);
         }
+    }
 
+    fn draw_info(&self, frame: &mut [u8], font: &Font) {
         // title text
         World::draw_text(frame, "Battleship", font, GREEN, 60.0, (20.0, 0.0));
 
@@ -408,6 +421,20 @@ impl World {
             }
             _ => {},
         }
+    }
+
+
+    /// Draw the `World` state to the frame buffer.
+    fn draw(&self, frame: &mut [u8], font: &Font) {
+        World::clear_top(frame);
+        World::clear_grids(frame);
+        World::clear_bottom(frame);
+
+        self.draw_ships(frame);
+        self.draw_shots(frame);
+        self.draw_target(frame);
+
+        self.draw_info(frame, font);
     }
 
     fn draw_text(frame: &mut [u8], text: &str, font: &Font, color: Color, height: f32, offset: (f32, f32)) {

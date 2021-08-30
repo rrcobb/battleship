@@ -1,14 +1,17 @@
 # Battleship
 
+- hits / misses on ships
+    - for now: copy other player from this player, effectively shooting at
+        yourself
 - draw text
     - DONE choose a library!
     - DONE draw title
     - add help text
-        - Place your ships!
+        - DONE Place your ships!
           - arrow keys to move
           - space to rotate
           - return to place
-        - Take aim
+        - DONE Take aim
         - Waiting for your opponent to (place their ships)
         - Waiting for your opponent to (fire)
         - Miss...
@@ -20,7 +23,7 @@
 
 - local version: how to play against an AI or something?
 - local version: play on the same screen
-- hits / misses on ships
+- game mode selector
 - prevent ships from locking when they intersect
 - movement rerendering is... slow somehow?
 - internet version
