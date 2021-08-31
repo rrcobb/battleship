@@ -66,9 +66,22 @@ fn main() -> Result<(), Error> {
     });
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum GameResult {
+    Victory,
+    Defeat
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum GameStatus {
+    Playing,
+    End(GameResult),
+}
+
 /// Representation of the application state
 struct World {
     rng: ThreadRng,
+    status: GameStatus,
     this_player: Player,
     other_player: Player,
 }
@@ -92,7 +105,7 @@ impl Cell {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum ShipStatus {
     Hidden,
     Placing,
@@ -106,7 +119,7 @@ struct Ship {
     cells: Vec<Cell>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 enum Direction {
     Up,
     Down,
@@ -141,6 +154,17 @@ impl Direction {
 }
 
 impl Ship {
+    fn starting_five1() -> [Self; 5] {
+        use ShipStatus::*;
+        [
+            Ship { status: Placing, len: 1, cells: vec![Cell { x: 0, y: 0 }] },
+            Ship { status: Hidden, len: 1, cells: vec![Cell { x: 0, y: 0 }] },
+            Ship { status: Hidden, len: 1, cells: vec![Cell { x: 0, y: 0 }] },
+            Ship { status: Hidden, len: 1, cells: vec![Cell { x: 0, y: 0 }] },
+            Ship { status: Hidden, len: 1, cells: vec![Cell { x: 0, y: 0 }] },
+        ]
+    }
+
     fn starting_five() -> [Self; 5] {
         use ShipStatus::*;
         [
@@ -277,7 +301,7 @@ impl Player {
     fn new() -> Self {
         Player {
             status: PlayerStatus::Placing,
-            ships: Ship::starting_five(),
+            ships: Ship::starting_five1(),
             target: Cell { x: 4, y: 5 },
             shots_taken: Vec::new(),
         }
@@ -529,11 +553,23 @@ impl World {
         World::clear_grids(frame);
         World::clear_bottom(frame);
 
-        self.draw_ships(frame);
-        self.draw_shots(frame);
-        self.draw_target(frame);
+        match self.status {
+            GameStatus::Playing => {
+                self.draw_ships(frame);
+                self.draw_shots(frame);
+                self.draw_target(frame);
 
-        self.draw_info(frame, font);
+                self.draw_info(frame, font);
+            }
+            GameStatus::End(GameResult::Victory) => {
+                World::draw_text(frame, "Glorious Victory!", font, GREEN, 60.0, (120.0, 60.0));
+                World::draw_text(frame, "press enter to restart", font, WHITE, 40.0, (120.0, 120.0));
+            }
+            GameStatus::End(GameResult::Defeat) => {
+                World::draw_text(frame, "Ignominious Defeat!", font, FLAME, 60.0, (120.0, 60.0));
+                World::draw_text(frame, "press enter to restart", font, WHITE, 40.0, (120.0, 120.0));
+            }
+        }
     }
 
     fn draw_text(
@@ -601,6 +637,7 @@ impl World {
         World {
             this_player: Player::new(),
             other_player: Player::new(),
+            status: GameStatus::Playing,
             rng: thread_rng(),
         }
     }
@@ -616,11 +653,25 @@ impl World {
 
     /// Update the `World` internal state
     fn update(&mut self, input: &WinitInputHelper) {
-        use PlayerStatus::*;
-        match self.this_player.status {
-            Placing => self.place_ships(input),
-            Aiming => self.aim(input),
-            Waiting => self.other_aim(),
+        use GameStatus::*;
+        match self.status {
+            Playing => {
+                use PlayerStatus::*;
+                match self.this_player.status {
+                    Placing => self.place_ships(input),
+                    Aiming => self.aim(input),
+                    Waiting => self.other_aim(),
+                }
+            }
+            End(_) => {
+                self.wait_for_restart(input);
+            }
+        }
+    }
+
+    fn wait_for_restart(&mut self, input: &WinitInputHelper) {
+        if input.key_pressed(VirtualKeyCode::Return) {
+            *self = World::new();
         }
     }
 
@@ -641,6 +692,7 @@ impl World {
         if input.key_pressed(VirtualKeyCode::Return) || input.key_pressed(VirtualKeyCode::Space) {
             if self.this_player.fire() {
                 self.other_player.status = PlayerStatus::Aiming;
+                self.check_victory_condition();
             }
         }
     }
@@ -657,6 +709,7 @@ impl World {
             _ => {
                 if self.other_player.fire() {
                     self.this_player.status = PlayerStatus::Aiming;
+                    self.check_victory_condition();
                 }
             }
         }
@@ -693,5 +746,30 @@ impl World {
                 ship.rotate_right();
             }
         }
+    }
+
+    fn check_victory_condition(&mut self) {
+        // winning means all ships are sunk
+        // so, for every cell in every ship, there's a shot from the other player that hits it
+        let loss = self
+            .this_player
+            .ships
+            .iter()
+            .all(|ship| World::is_sunk(ship, &self.other_player.shots_taken));
+        let win = self
+            .other_player
+            .ships
+            .iter()
+            .all(|ship| World::is_sunk(ship, &self.this_player.shots_taken));
+        if loss {
+           self.status = GameStatus::End(GameResult::Defeat); 
+        }
+        if win {
+           self.status = GameStatus::End(GameResult::Victory); 
+        }
+    }
+
+    fn is_sunk(ship: &Ship, shots: &[Cell]) -> bool {
+        ship.cells.iter().all(|cell| shots.contains(cell))
     }
 }

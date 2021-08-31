@@ -1,15 +1,14 @@
 # Battleship
 
-- game end (when all ships are sunk)
-- refactor: layer of indirection for moves, to support alternate game modes
+- refactor
+  - layer of indirection for moves, to support alternate game modes
     - struct "move" that a player / world consumes?
+- play vs computer
+  - random ship placement
+  - 'smarter' / harder AI
+      - doesn't know your ships, but is smarter about where to shoot
 - draw text
-    - DONE Place your ships!
-    - DONE Take aim
-    - DONE choose a library!
-    - DONE draw title
-    - add help text
-    - add messages for hit/miss log
+    - messages for hit/miss log
         - Waiting for your opponent to (place their ships)
         - Waiting for your opponent to (fire)
         - Miss...
@@ -17,18 +16,22 @@
         - sunk ship messages
         - Hit! You sunk their x
             - requires ship names
-    - add grid labels
-    - add 'score' - ships remaining, per player
+    - grid labels
+    - 'score' - ships remaining, per player
+    - help text
+    - DONE Place your ships!
+    - DONE Take aim
+    - DONE choose a library!
+    - DONE draw title
+- DONE game end (when all ships are sunk)
 
-- play vs computer
-  - random ship placement
-  - 'smarter' / harder AI
-      - doesn't know your ships, but is smarter about where to shoot
-- local version: play on the same screen
-    - hide placement from each other
-    - just targeting
-- game mode selector
-- improved colors
+- local version: play on the same screen against another person
+  - hide placement from each other
+  - just targeting / hits / misses
+  - game mode selector
+- design
+  - improved colors
+  - better text sizing / placement
 - internet / local network version
     - see only your ships
     - try to hit the other player
@@ -37,6 +40,15 @@
   - allow edit ships after placed
   - allow undo for placing ships
 - movement rerendering is... slow somehow?
+    - is this waiting on inputs too slowly?
+- dumb, don't do, speed things:
+    - keep more state, do less compute
+      - ship status
+      - shot status (hit or miss)
+      - overlaps - change data structure?
+    - don't redraw the world every time
+    - keep a rendered font gpu cache
+
 - Build for windows, mac, web
 - web server for:
   - get latest binary
