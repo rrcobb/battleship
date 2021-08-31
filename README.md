@@ -1,45 +1,47 @@
 # Battleship
 
-- hits / misses on ships
-    - for now: copy other player from this player, effectively shooting at
-        yourself
-        - todo: random ship placement
-    - DONE: AI: random move of target
-        - don't allow firing again at an existing shot
-- add messages for hit/miss log
+- game end (when all ships are sunk)
+- refactor: layer of indirection for moves, to support alternate game modes
+    - struct "move" that a player / world consumes?
 - draw text
+    - DONE Place your ships!
+    - DONE Take aim
     - DONE choose a library!
     - DONE draw title
     - add help text
-        - DONE Place your ships!
-          - arrow keys to move
-          - space to rotate
-          - return to place
-        - DONE Take aim
+    - add messages for hit/miss log
         - Waiting for your opponent to (place their ships)
         - Waiting for your opponent to (fire)
         - Miss...
         - Hit!
         - sunk ship messages
         - Hit! You sunk their x
+            - requires ship names
     - add grid labels
-    - add 'score' - ships remaining
+    - add 'score' - ships remaining, per player
 
-- local version: how to play against an AI or something?
+- play vs computer
+  - random ship placement
+  - 'smarter' / harder AI
+      - doesn't know your ships, but is smarter about where to shoot
 - local version: play on the same screen
-- internet version
+    - hide placement from each other
+    - just targeting
 - game mode selector
-- prevent ships from locking when they intersect
-- how to confirm done?
-  - for now, just.. when the last ship is placed
-- how to edit after placed?
-- allow undo for placing ships
+- improved colors
+- internet / local network version
+    - see only your ships
+    - try to hit the other player
+- allow mouse to select
+- ship placement
+  - allow edit ships after placed
+  - allow undo for placing ships
 - movement rerendering is... slow somehow?
-- Build for windows, mac, web?
+- Build for windows, mac, web
 - web server for:
   - get latest binary
   - find active players to start a game
-- nice to have: bmps for the ships
+- nice to have: .bmp's for the ships
 - sounds with https://docs.rs/rodio/0.14.0/rodio/ or something
 
 - ship placement / setup
@@ -47,11 +49,16 @@
   - DONE confirm with key
   - DONE select which boat to move somehow (iteratively)
   - DONE turn ships
+  - DONE prevent ships from locking when they intersect
 - DONE ship status (placing, locked, hidden)
-- figure out turn taking
+- DONE(ish, for now) figure out turn taking
     - DONE move target with arrow keys
     - DONE select with space or enter
     - DONE adds to shots taken
 - DONE get grids rendering per player
     - DONE rendering empty grids
     - DONE render ships on grids
+- DONE render hits / misses on ships
+    - DONE for now: copy other player from this player, effectively shooting at yourself
+    - DONE: AI: random move of target
+        - DONE don't allow firing again at an existing shot

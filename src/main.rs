@@ -1,15 +1,14 @@
 use pixels::{Error, Pixels, SurfaceTexture};
+use rand::distributions::Standard;
+use rand::prelude::Distribution;
+use rand::{rngs::ThreadRng, thread_rng, Rng};
+use rusttype::{point, Font, Scale};
 use std::iter::{once, repeat};
 use winit::dpi::LogicalSize;
 use winit::event::{Event, VirtualKeyCode};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 use winit_input_helper::WinitInputHelper;
-use rusttype::{point, Font, Scale};
-use rand::{rngs::ThreadRng, thread_rng, Rng};
-use rand::prelude::Distribution;
-use rand::distributions::Standard;
-use rand::seq::SliceRandom;
 
 fn main() -> Result<(), Error> {
     let event_loop = EventLoop::new();
@@ -100,7 +99,7 @@ enum ShipStatus {
     Locked,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct Ship {
     status: ShipStatus,
     len: u8,
@@ -258,10 +257,6 @@ impl Ship {
     fn placing(&mut self) {
         self.status = ShipStatus::Placing;
     }
-
-    fn lock(&mut self) {
-        self.status = ShipStatus::Locked;
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -288,19 +283,53 @@ impl Player {
         }
     }
 
-    fn ship_to_place(&mut self) -> Option<&mut Ship> {
+    fn ship_to_place(&self) -> Option<&Ship> {
+        self.ships
+            .iter()
+            .find(|ship| ship.status == ShipStatus::Placing)
+    }
+
+    fn ship_to_place_mut(&mut self) -> Option<&mut Ship> {
         self.ships
             .iter_mut()
             .find(|ship| ship.status == ShipStatus::Placing)
     }
 
-    fn fire(&mut self) {
+    fn fire(&mut self) -> bool {
         let target = &self.target;
-        self.shots_taken.push(target.clone());
+        let overlaps_shot = self.shots_taken.iter().any(|shot| target == shot);
+        if !overlaps_shot {
+            self.shots_taken.push(target.clone());
+            self.target = Cell { x: 4, y: 5 };
+            self.status = PlayerStatus::Waiting;
+        }
+        !overlaps_shot
+    }
 
-        self.target = Cell { x: 4, y: 5 };
-        self.status = PlayerStatus::Waiting;
-        // check if it's a hit
+    fn ship_to_place_overlaps_any_locked(&self) -> bool {
+        let mut overlap = false;
+        if let Some(ship) = self.ship_to_place() {
+            overlap = self.ships.iter().any(|other_ship| {
+                other_ship.status != ShipStatus::Hidden
+                    && other_ship != ship
+                    && other_ship
+                        .cells
+                        .iter()
+                        .any(|cell| ship.cells.contains(cell))
+            });
+        }
+        overlap
+    }
+
+    fn lock_ship(&mut self) -> bool {
+        let overlap = self.ship_to_place_overlaps_any_locked();
+        if !overlap {
+            if let Some(ship) = self.ship_to_place_mut() {
+                ship.status = ShipStatus::Locked;
+                return true;
+            }
+        }
+        false
     }
 }
 
@@ -417,8 +446,13 @@ impl World {
     fn draw_shots(&self, frame: &mut [u8]) {
         for shot in self.this_player.shots_taken.iter() {
             // check if it was a hit by iterating over the cells in the other player's ships
-            let color = match self.other_player.ships.iter().any(|ship| ship.cells.iter().any(|sc| sc == shot)) {
-                true => BLACK, // hit
+            let color = match self
+                .other_player
+                .ships
+                .iter()
+                .any(|ship| ship.cells.iter().any(|sc| sc == shot))
+            {
+                true => BLACK,  // hit
                 false => WHITE, // miss
             };
             World::fill_cell(shot, frame, color, false);
@@ -426,8 +460,13 @@ impl World {
 
         for shot in self.other_player.shots_taken.iter() {
             // check if it was a hit by iterating over the cells in the other player's ships
-            let color = match self.this_player.ships.iter().any(|ship| ship.cells.iter().any(|sc| sc == shot)) {
-                true => BLACK, // hit
+            let color = match self
+                .this_player
+                .ships
+                .iter()
+                .any(|ship| ship.cells.iter().any(|sc| sc == shot))
+            {
+                true => BLACK,  // hit
                 false => WHITE, // miss
             };
             World::fill_cell(shot, frame, color, true);
@@ -452,25 +491,37 @@ impl World {
             PlayerStatus::Placing => {
                 World::draw_text(frame, "Place your ships!", font, WHITE, 40.0, (220.0, 60.0));
                 let height = 24.0;
-                for (i, text) in ["arrow keys to move", "space to rotate", "enter to place"].iter().enumerate() {
+                for (i, text) in ["arrow keys to move", "space to rotate", "enter to place"]
+                    .iter()
+                    .enumerate()
+                {
                     let y = 100.0 + i as f32 * height;
                     World::draw_text(frame, text, font, WHITE, height, (220.0, y));
                 }
-            },
+            }
             PlayerStatus::Aiming => {
                 World::draw_text(frame, "Take aim!", font, WHITE, 40.0, (220.0, 60.0));
                 let height = 24.0;
-                for (i, text) in ["arrow keys to move", "space or enter to fire"].iter().enumerate() {
+                for (i, text) in ["arrow keys to move", "space or enter to fire"]
+                    .iter()
+                    .enumerate()
+                {
                     let y = 100.0 + i as f32 * height;
                     World::draw_text(frame, text, font, WHITE, height, (220.0, y));
                 }
-            },
+            }
             PlayerStatus::Waiting => {
-                World::draw_text(frame, "Your opponent is aiming...", font, WHITE, 40.0, (120.0, 90.0));
+                World::draw_text(
+                    frame,
+                    "Your opponent is aiming...",
+                    font,
+                    WHITE,
+                    40.0,
+                    (120.0, 90.0),
+                );
             }
         }
     }
-
 
     /// Draw the `World` state to the frame buffer.
     fn draw(&self, frame: &mut [u8], font: &Font) {
@@ -485,9 +536,16 @@ impl World {
         self.draw_info(frame, font);
     }
 
-    fn draw_text(frame: &mut [u8], text: &str, font: &Font, color: Color, height: f32, offset: (f32, f32)) {
+    fn draw_text(
+        frame: &mut [u8],
+        text: &str,
+        font: &Font,
+        color: Color,
+        height: f32,
+        offset: (f32, f32),
+    ) {
         let scale = Scale {
-            x: height, 
+            x: height,
             y: height,
         };
 
@@ -510,7 +568,7 @@ impl World {
                         (BACKGROUND[2] as f32 * (1.0 - v) + color[2] as f32 * v) as u8,
                         0xff,
                     ];
-                    frame[index..index+4].copy_from_slice(&blended_color);
+                    frame[index..index + 4].copy_from_slice(&blended_color);
                 });
             }
         }
@@ -566,8 +624,6 @@ impl World {
         }
     }
 
-    
-
     fn aim(&mut self, input: &WinitInputHelper) {
         let target = &mut self.this_player.target;
         if input.key_pressed(VirtualKeyCode::Down) {
@@ -583,8 +639,9 @@ impl World {
             target.shift(Direction::Left);
         }
         if input.key_pressed(VirtualKeyCode::Return) || input.key_pressed(VirtualKeyCode::Space) {
-            self.this_player.fire();
-            self.other_player.status = PlayerStatus::Aiming;
+            if self.this_player.fire() {
+                self.other_player.status = PlayerStatus::Aiming;
+            }
         }
     }
 
@@ -596,41 +653,44 @@ impl World {
             x if x > 0.1 => {
                 let direction: Direction = self.rng.gen();
                 self.other_player.target.shift(direction);
-            },
+            }
             _ => {
-                self.other_player.fire();
-                self.this_player.status = PlayerStatus::Aiming;
+                if self.other_player.fire() {
+                    self.this_player.status = PlayerStatus::Aiming;
+                }
             }
         }
     }
 
     fn place_ships(&mut self, input: &WinitInputHelper) {
-        let ship = self.this_player.ship_to_place().unwrap();
-        if input.key_pressed(VirtualKeyCode::Down) {
-            ship.shift(Direction::Down);
-        }
-        if input.key_pressed(VirtualKeyCode::Up) {
-            ship.shift(Direction::Up);
-        }
-        if input.key_pressed(VirtualKeyCode::Right) {
-            ship.shift(Direction::Right);
-        }
-        if input.key_pressed(VirtualKeyCode::Left) {
-            ship.shift(Direction::Left);
-        }
-        if input.key_pressed(VirtualKeyCode::Space) {
-            ship.rotate_right();
-        }
         if input.key_pressed(VirtualKeyCode::Return) {
-            ship.lock();
-            let next = self
-                .this_player
-                .ships
-                .iter_mut()
-                .find(|s| s.status == ShipStatus::Hidden);
-            match next {
-                Some(ship) => ship.placing(),
-                None => self.begin_game(), 
+            if self.this_player.lock_ship() {
+                let next = self
+                    .this_player
+                    .ships
+                    .iter_mut()
+                    .find(|s| s.status == ShipStatus::Hidden);
+                match next {
+                    Some(ship) => ship.placing(),
+                    None => self.begin_game(),
+                }
+            }
+        } else {
+            let ship = self.this_player.ship_to_place_mut().unwrap();
+            if input.key_pressed(VirtualKeyCode::Down) {
+                ship.shift(Direction::Down);
+            }
+            if input.key_pressed(VirtualKeyCode::Up) {
+                ship.shift(Direction::Up);
+            }
+            if input.key_pressed(VirtualKeyCode::Right) {
+                ship.shift(Direction::Right);
+            }
+            if input.key_pressed(VirtualKeyCode::Left) {
+                ship.shift(Direction::Left);
+            }
+            if input.key_pressed(VirtualKeyCode::Space) {
+                ship.rotate_right();
             }
         }
     }
