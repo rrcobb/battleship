@@ -3,6 +3,10 @@
 - hits / misses on ships
     - for now: copy other player from this player, effectively shooting at
         yourself
+        - todo: random ship placement
+    - DONE: AI: random move of target
+        - don't allow firing again at an existing shot
+- add messages for hit/miss log
 - draw text
     - DONE choose a library!
     - DONE draw title
@@ -23,19 +27,20 @@
 
 - local version: how to play against an AI or something?
 - local version: play on the same screen
+- internet version
 - game mode selector
 - prevent ships from locking when they intersect
+- how to confirm done?
+  - for now, just.. when the last ship is placed
+- how to edit after placed?
+- allow undo for placing ships
 - movement rerendering is... slow somehow?
-- internet version
 - Build for windows, mac, web?
 - web server for:
   - get latest binary
   - find active players to start a game
 - nice to have: bmps for the ships
 - sounds with https://docs.rs/rodio/0.14.0/rodio/ or something
-- how to confirm done?
-- for now, just.. when the last ship is placed
-- how to edit after placed?
 
 - ship placement / setup
   - DONE move boats with arrow keys
@@ -47,7 +52,6 @@
     - DONE move target with arrow keys
     - DONE select with space or enter
     - DONE adds to shots taken
-- get grids rendering per player
+- DONE get grids rendering per player
     - DONE rendering empty grids
     - DONE render ships on grids
-        - but, actually the ships instead of just squares

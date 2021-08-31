@@ -5,8 +5,11 @@ use winit::event::{Event, VirtualKeyCode};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 use winit_input_helper::WinitInputHelper;
-
-use rusttype::{point, Font, PositionedGlyph, Scale};
+use rusttype::{point, Font, Scale};
+use rand::{rngs::ThreadRng, thread_rng, Rng};
+use rand::prelude::Distribution;
+use rand::distributions::Standard;
+use rand::seq::SliceRandom;
 
 fn main() -> Result<(), Error> {
     let event_loop = EventLoop::new();
@@ -66,12 +69,13 @@ fn main() -> Result<(), Error> {
 
 /// Representation of the application state
 struct World {
+    rng: ThreadRng,
     this_player: Player,
     other_player: Player,
 }
 
 // 0-indexed grid positions
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 struct Cell {
     x: u8,
     y: u8,
@@ -89,13 +93,14 @@ impl Cell {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum ShipStatus {
     Hidden,
     Placing,
     Locked,
 }
 
+#[derive(Debug, Clone)]
 struct Ship {
     status: ShipStatus,
     len: u8,
@@ -108,6 +113,20 @@ enum Direction {
     Down,
     Left,
     Right,
+}
+
+impl Distribution<Direction> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Direction {
+        use Direction::*;
+        let index: u8 = rng.gen_range(0..4);
+        match index {
+            0 => Up,
+            1 => Down,
+            2 => Left,
+            3 => Right,
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Direction {
@@ -274,6 +293,15 @@ impl Player {
             .iter_mut()
             .find(|ship| ship.status == ShipStatus::Placing)
     }
+
+    fn fire(&mut self) {
+        let target = &self.target;
+        self.shots_taken.push(target.clone());
+
+        self.target = Cell { x: 4, y: 5 };
+        self.status = PlayerStatus::Waiting;
+        // check if it's a hit
+    }
 }
 
 // type alias for colors
@@ -375,7 +403,7 @@ impl World {
             use ShipStatus::*;
             let color = match ship.status {
                 Placing => YELLOW,
-                Locked => WHITE,
+                Locked => GRAY,
                 _ => GRID_EMPTY,
             };
             if ship.status != Hidden {
@@ -388,13 +416,31 @@ impl World {
 
     fn draw_shots(&self, frame: &mut [u8]) {
         for shot in self.this_player.shots_taken.iter() {
-            World::fill_cell(shot, frame, GRAY, false);
+            // check if it was a hit by iterating over the cells in the other player's ships
+            let color = match self.other_player.ships.iter().any(|ship| ship.cells.iter().any(|sc| sc == shot)) {
+                true => BLACK, // hit
+                false => WHITE, // miss
+            };
+            World::fill_cell(shot, frame, color, false);
+        }
+
+        for shot in self.other_player.shots_taken.iter() {
+            // check if it was a hit by iterating over the cells in the other player's ships
+            let color = match self.this_player.ships.iter().any(|ship| ship.cells.iter().any(|sc| sc == shot)) {
+                true => BLACK, // hit
+                false => WHITE, // miss
+            };
+            World::fill_cell(shot, frame, color, true);
         }
     }
 
     fn draw_target(&self, frame: &mut [u8]) {
         if self.this_player.status == PlayerStatus::Aiming {
             World::fill_cell(&self.this_player.target, frame, FLAME, false);
+        }
+
+        if self.other_player.status == PlayerStatus::Aiming {
+            World::fill_cell(&self.other_player.target, frame, YELLOW, true);
         }
     }
 
@@ -418,8 +464,10 @@ impl World {
                     let y = 100.0 + i as f32 * height;
                     World::draw_text(frame, text, font, WHITE, height, (220.0, y));
                 }
+            },
+            PlayerStatus::Waiting => {
+                World::draw_text(frame, "Your opponent is aiming...", font, WHITE, 40.0, (120.0, 90.0));
             }
-            _ => {},
         }
     }
 
@@ -495,7 +543,17 @@ impl World {
         World {
             this_player: Player::new(),
             other_player: Player::new(),
+            rng: thread_rng(),
         }
+    }
+
+    fn begin_game(&mut self) {
+        // for now, the game mode is: other player is a dumb AI
+        // and places the ships exactly where you placed them
+        self.other_player.ships = self.this_player.ships.clone();
+        // for now, you have the first turn
+        self.other_player.status = PlayerStatus::Waiting;
+        self.this_player.status = PlayerStatus::Aiming;
     }
 
     /// Update the `World` internal state
@@ -504,9 +562,11 @@ impl World {
         match self.this_player.status {
             Placing => self.place_ships(input),
             Aiming => self.aim(input),
-            Waiting => (),
+            Waiting => self.other_aim(),
         }
     }
+
+    
 
     fn aim(&mut self, input: &WinitInputHelper) {
         let target = &mut self.this_player.target;
@@ -523,9 +583,24 @@ impl World {
             target.shift(Direction::Left);
         }
         if input.key_pressed(VirtualKeyCode::Return) || input.key_pressed(VirtualKeyCode::Space) {
-            self.this_player.shots_taken.push(target.clone());
-            self.this_player.target = Cell { x: 4, y: 5 };
-            self.this_player.status = PlayerStatus::Waiting;
+            self.this_player.fire();
+            self.other_player.status = PlayerStatus::Aiming;
+        }
+    }
+
+    fn other_aim(&mut self) {
+        // move or shoot with some %
+        // on average, move 10 times for every shot
+        let shoot: f64 = self.rng.gen();
+        match shoot {
+            x if x > 0.1 => {
+                let direction: Direction = self.rng.gen();
+                self.other_player.target.shift(direction);
+            },
+            _ => {
+                self.other_player.fire();
+                self.this_player.status = PlayerStatus::Aiming;
+            }
         }
     }
 
@@ -555,7 +630,7 @@ impl World {
                 .find(|s| s.status == ShipStatus::Hidden);
             match next {
                 Some(ship) => ship.placing(),
-                None => self.this_player.status = PlayerStatus::Aiming,
+                None => self.begin_game(), 
             }
         }
     }
