@@ -1,3 +1,5 @@
+#![feature(derive_default_enum)]
+
 use pixels::{Error, Pixels, SurfaceTexture};
 use rand::distributions::Standard;
 use rand::prelude::Distribution;
@@ -69,7 +71,7 @@ fn main() -> Result<(), Error> {
 #[derive(Debug, Clone, PartialEq)]
 enum GameResult {
     Victory,
-    Defeat
+    Defeat,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -87,32 +89,66 @@ struct World {
 }
 
 // 0-indexed grid positions
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 struct Cell {
     x: u8,
     y: u8,
 }
 
 impl Cell {
-    fn shift(&mut self, direction: Direction) {
+    fn shift(&mut self, direction: &Direction) -> bool {
         let (x_shift, y_shift) = direction.xy();
         let x = x_shift + self.x as i8;
         let y = y_shift + self.y as i8;
-        if x >= 0 && x < CELL_COUNT as i8 && y >= 0 && y < CELL_COUNT as i8 {
+        let valid_shift = x >= 0 && x < CELL_COUNT as i8 && y >= 0 && y < CELL_COUNT as i8;
+        if valid_shift {
             self.x = x as u8;
             self.y = y as u8;
+        }
+        valid_shift
+    }
+
+    fn random_seq(len: &u8, rng: &mut ThreadRng) -> Vec<Cell> {
+        let cell: Cell = rng.gen();
+        cell.extend(rng, len)
+    }
+
+    fn extend(&self, rng: &mut ThreadRng, len: &u8) -> Vec<Cell> {
+        let mut cell = self.clone();
+        let mut res = Vec::new();
+        let mut valid = false;
+        while !valid {
+            valid = true;
+            // for any valid cell, extending len in _some_ direction should be valid
+            let direction = rng.gen();
+            for _i in 0..*len {
+                res.push(cell.clone());
+                // ensure all cells are valid shifts
+                valid = valid && cell.shift(&direction); 
+            }
+        }
+        res
+    }
+}
+
+impl Distribution<Cell> for Standard {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Cell {
+        Cell {
+            x: rng.gen_range(0..10),
+            y: rng.gen_range(0..10),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 enum ShipStatus {
+    #[default]
     Hidden,
     Placing,
     Locked,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 struct Ship {
     status: ShipStatus,
     len: u8,
@@ -154,20 +190,25 @@ impl Direction {
 }
 
 impl Ship {
-    fn starting_five1() -> [Self; 5] {
+    fn random_five(rng: &mut ThreadRng) -> Vec<Self> {
         use ShipStatus::*;
-        [
-            Ship { status: Placing, len: 1, cells: vec![Cell { x: 0, y: 0 }] },
-            Ship { status: Hidden, len: 1, cells: vec![Cell { x: 0, y: 0 }] },
-            Ship { status: Hidden, len: 1, cells: vec![Cell { x: 0, y: 0 }] },
-            Ship { status: Hidden, len: 1, cells: vec![Cell { x: 0, y: 0 }] },
-            Ship { status: Hidden, len: 1, cells: vec![Cell { x: 0, y: 0 }] },
-        ]
+        let lengths = [2,3,4,4,5];
+        let mut ships = Vec::new();
+        for len in lengths.iter() {
+            let cells = Cell::random_seq(len, rng);
+            let mut ship = Ship { status: Locked, len: *len, cells };
+            while Ship::any_overlap(&ship, &ships) {
+                let cells = Cell::random_seq(len, rng);
+                ship = Ship { status: Locked, len: *len, cells };
+            }
+            ships.push(ship);
+        }
+        ships
     }
 
-    fn starting_five() -> [Self; 5] {
+    fn original_length_ships() -> Vec<Self> {
         use ShipStatus::*;
-        [
+        vec![
             Ship {
                 status: Placing,
                 len: 2,
@@ -216,7 +257,7 @@ impl Ship {
         ]
     }
 
-    fn shift(&mut self, direction: Direction) {
+    fn shift(&mut self, direction: &Direction) {
         let (x, y) = direction.xy();
         // move each cell in the direction it should be moved
         let mut valid = true;
@@ -281,6 +322,17 @@ impl Ship {
     fn placing(&mut self) {
         self.status = ShipStatus::Placing;
     }
+
+    fn any_overlap(ship: &Ship, ships: &[Ship]) -> bool {
+        ships.iter().any(|other_ship| {
+            other_ship.status != ShipStatus::Hidden
+                && other_ship != ship
+                && other_ship
+                .cells
+                .iter()
+                .any(|cell| ship.cells.contains(cell))
+        })
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -292,7 +344,7 @@ enum PlayerStatus {
 
 struct Player {
     status: PlayerStatus,
-    ships: [Ship; 5],
+    ships: Vec<Ship>,
     target: Cell,
     shots_taken: Vec<Cell>,
 }
@@ -301,7 +353,7 @@ impl Player {
     fn new() -> Self {
         Player {
             status: PlayerStatus::Placing,
-            ships: Ship::starting_five1(),
+            ships: Ship::original_length_ships(),
             target: Cell { x: 4, y: 5 },
             shots_taken: Vec::new(),
         }
@@ -331,18 +383,11 @@ impl Player {
     }
 
     fn ship_to_place_overlaps_any_locked(&self) -> bool {
-        let mut overlap = false;
         if let Some(ship) = self.ship_to_place() {
-            overlap = self.ships.iter().any(|other_ship| {
-                other_ship.status != ShipStatus::Hidden
-                    && other_ship != ship
-                    && other_ship
-                        .cells
-                        .iter()
-                        .any(|cell| ship.cells.contains(cell))
-            });
+            Ship::any_overlap(&ship, &self.ships)
+        } else {
+            false
         }
-        overlap
     }
 
     fn lock_ship(&mut self) -> bool {
@@ -434,6 +479,8 @@ impl World {
 
             frame[i * w * 4..(i + 1) * w * 4].copy_from_slice(&pixels);
         }
+
+        
     }
 
     fn clear_bottom(frame: &mut [u8]) {
@@ -456,7 +503,7 @@ impl World {
             use ShipStatus::*;
             let color = match ship.status {
                 Placing => YELLOW,
-                Locked => GRAY,
+                Locked => GREEN,
                 _ => GRID_EMPTY,
             };
             if ship.status != Hidden {
@@ -545,6 +592,20 @@ impl World {
                 );
             }
         }
+
+        for i in 1..=10 {
+            // grid numbering
+            let offset = ((GRID_MARGIN + i * CELL_WIDTH - 20) as f32, TOP_MARGIN as f32 - 18.0);
+            World::draw_text(frame, &i.to_string(), font, WHITE, 18.0, offset);
+            let offset = ((2 * GRID_MARGIN + GRID_WIDTH + i * CELL_WIDTH - 20) as f32, TOP_MARGIN as f32 - 18.0);
+            World::draw_text(frame, &i.to_string(), font, WHITE, 18.0, offset);
+
+            let letter = ('A' as u8 + i as u8 - 1) as char;
+            let offset = ((GRID_MARGIN - 18) as f32, (TOP_MARGIN + i * CELL_WIDTH - 22) as f32);
+            World::draw_text(frame, &letter.to_string(), font, WHITE, 18.0, offset);
+            let offset = ((2 * GRID_MARGIN + GRID_WIDTH - 18) as f32, (TOP_MARGIN + i * CELL_WIDTH - 22) as f32);
+            World::draw_text(frame, &letter.to_string(), font, WHITE, 18.0, offset);
+        }
     }
 
     /// Draw the `World` state to the frame buffer.
@@ -563,11 +624,32 @@ impl World {
             }
             GameStatus::End(GameResult::Victory) => {
                 World::draw_text(frame, "Glorious Victory!", font, GREEN, 60.0, (120.0, 60.0));
-                World::draw_text(frame, "press enter to restart", font, WHITE, 40.0, (120.0, 120.0));
+                World::draw_text(
+                    frame,
+                    "press enter to restart",
+                    font,
+                    WHITE,
+                    40.0,
+                    (120.0, 120.0),
+                );
             }
             GameStatus::End(GameResult::Defeat) => {
-                World::draw_text(frame, "Ignominious Defeat!", font, FLAME, 60.0, (120.0, 60.0));
-                World::draw_text(frame, "press enter to restart", font, WHITE, 40.0, (120.0, 120.0));
+                World::draw_text(
+                    frame,
+                    "Ignominious Defeat!",
+                    font,
+                    FLAME,
+                    60.0,
+                    (120.0, 60.0),
+                );
+                World::draw_text(
+                    frame,
+                    "press enter to restart",
+                    font,
+                    WHITE,
+                    40.0,
+                    (120.0, 120.0),
+                );
             }
         }
     }
@@ -645,7 +727,7 @@ impl World {
     fn begin_game(&mut self) {
         // for now, the game mode is: other player is a dumb AI
         // and places the ships exactly where you placed them
-        self.other_player.ships = self.this_player.ships.clone();
+        self.other_player.ships = Ship::random_five(&mut self.rng);
         // for now, you have the first turn
         self.other_player.status = PlayerStatus::Waiting;
         self.this_player.status = PlayerStatus::Aiming;
@@ -678,16 +760,16 @@ impl World {
     fn aim(&mut self, input: &WinitInputHelper) {
         let target = &mut self.this_player.target;
         if input.key_pressed(VirtualKeyCode::Down) {
-            target.shift(Direction::Down);
+            target.shift(&Direction::Down);
         }
         if input.key_pressed(VirtualKeyCode::Up) {
-            target.shift(Direction::Up);
+            target.shift(&Direction::Up);
         }
         if input.key_pressed(VirtualKeyCode::Right) {
-            target.shift(Direction::Right);
+            target.shift(&Direction::Right);
         }
         if input.key_pressed(VirtualKeyCode::Left) {
-            target.shift(Direction::Left);
+            target.shift(&Direction::Left);
         }
         if input.key_pressed(VirtualKeyCode::Return) || input.key_pressed(VirtualKeyCode::Space) {
             if self.this_player.fire() {
@@ -704,7 +786,7 @@ impl World {
         match shoot {
             x if x > 0.1 => {
                 let direction: Direction = self.rng.gen();
-                self.other_player.target.shift(direction);
+                self.other_player.target.shift(&direction);
             }
             _ => {
                 if self.other_player.fire() {
@@ -731,16 +813,16 @@ impl World {
         } else {
             let ship = self.this_player.ship_to_place_mut().unwrap();
             if input.key_pressed(VirtualKeyCode::Down) {
-                ship.shift(Direction::Down);
+                ship.shift(&Direction::Down);
             }
             if input.key_pressed(VirtualKeyCode::Up) {
-                ship.shift(Direction::Up);
+                ship.shift(&Direction::Up);
             }
             if input.key_pressed(VirtualKeyCode::Right) {
-                ship.shift(Direction::Right);
+                ship.shift(&Direction::Right);
             }
             if input.key_pressed(VirtualKeyCode::Left) {
-                ship.shift(Direction::Left);
+                ship.shift(&Direction::Left);
             }
             if input.key_pressed(VirtualKeyCode::Space) {
                 ship.rotate_right();
@@ -762,10 +844,10 @@ impl World {
             .iter()
             .all(|ship| World::is_sunk(ship, &self.this_player.shots_taken));
         if loss {
-           self.status = GameStatus::End(GameResult::Defeat); 
+            self.status = GameStatus::End(GameResult::Defeat);
         }
         if win {
-           self.status = GameStatus::End(GameResult::Victory); 
+            self.status = GameStatus::End(GameResult::Victory);
         }
     }
 

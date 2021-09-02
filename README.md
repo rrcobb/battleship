@@ -1,12 +1,18 @@
 # Battleship
 
+- starting screen
+- game mode selection
+    - ai level
+    - ship length? (short ships vs original length ships)
+    - eventually, internet vs local ai
 - refactor
   - layer of indirection for moves, to support alternate game modes
     - struct "move" that a player / world consumes?
+  - store the hits on the structs instead of recalculating every time
 - play vs computer
-  - random ship placement
   - 'smarter' / harder AI
       - doesn't know your ships, but is smarter about where to shoot
+- target red should be a different shape (target?)
 - draw text
     - messages for hit/miss log
         - Waiting for your opponent to (place their ships)
@@ -16,9 +22,8 @@
         - sunk ship messages
         - Hit! You sunk their x
             - requires ship names
-    - grid labels
     - 'score' - ships remaining, per player
-    - help text
+    - DONE grid labels
     - DONE Place your ships!
     - DONE Take aim
     - DONE choose a library!
@@ -28,7 +33,6 @@
 - local version: play on the same screen against another person
   - hide placement from each other
   - just targeting / hits / misses
-  - game mode selector
 - design
   - improved colors
   - better text sizing / placement
@@ -74,3 +78,4 @@
     - DONE for now: copy other player from this player, effectively shooting at yourself
     - DONE: AI: random move of target
         - DONE don't allow firing again at an existing shot
+  - DONE random ship placement
