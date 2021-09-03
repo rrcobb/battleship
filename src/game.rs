@@ -6,11 +6,15 @@ use winit_input_helper::WinitInputHelper;
 use std::iter::{once, repeat};
 use std::convert::From;
 
+use crate::connection::*;
+use std::net::TcpStream;
+
 /// Representation of the application state, plus some
 pub struct World<'a> {
     font: Font<'a>,
     rng: ThreadRng,
     status: GameStatus,
+    stream: Option<TcpStream>,
     this_player: Player,
     other_player: Player,
 }
@@ -19,6 +23,12 @@ pub struct World<'a> {
 enum GameResult {
     Victory,
     Defeat,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum GameType {
+    Ai,
+    LocalNetwork,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -413,47 +423,27 @@ impl World<'_> {
 
                 self.draw_info(frame, font);
             }
-            GameStatus::End(GameResult::Victory) => {
-                World::draw_text(frame, "Glorious Victory!", font, GREEN, 60.0, (120.0, 60.0));
-                World::draw_text(
-                    frame,
-                    "press enter to restart",
-                    font,
-                    WHITE,
-                    40.0,
-                    (120.0, 120.0),
-                );
-            }
-            GameStatus::End(GameResult::Defeat) => {
-                World::draw_text(
-                    frame,
-                    "Ignominious Defeat!",
-                    font,
-                    FLAME,
-                    60.0,
-                    (120.0, 60.0),
-                );
-                World::draw_text(
-                    frame,
-                    "press enter to restart",
-                    font,
-                    WHITE,
-                    40.0,
-                    (120.0, 120.0),
-                );
-            }
+            GameStatus::End(_) => self.draw_end_message(frame),
         }
     }
 
     /// Create a new `World` instance with empty values
-    pub fn new() -> Self {
+    pub fn new(game_type: GameType) -> Self {
         let font_data = include_bytes!("./source-code-pro-regular.ttf");
         let font = Font::try_from_bytes(font_data as &[u8]).unwrap();
+
+        use GameType::*;
+        let stream = match game_type {
+            Ai => None,
+            LocalNetwork => Some(try_connect().unwrap()),
+        };
+
         World {
             this_player: Player::new(),
             other_player: Player::new(),
             status: GameStatus::Playing,
             font,
+            stream,
             rng: thread_rng(),
         }
     }
@@ -719,6 +709,41 @@ impl World<'_> {
         }
     }
 
+    fn draw_end_message(&self, frame: &mut [u8]) {
+        match self.status {
+            GameStatus::End(GameResult::Victory) => {
+                World::draw_text(frame, "Glorious Victory!", &self.font, GREEN, 60.0, (120.0, 60.0));
+                World::draw_text(
+                    frame,
+                    "press enter to restart",
+                    &self.font,
+                    WHITE,
+                    40.0,
+                    (120.0, 120.0),
+                );
+            }
+            GameStatus::End(GameResult::Defeat) => {
+                World::draw_text(
+                    frame,
+                    "Ignominious Defeat!",
+                    &self.font,
+                    FLAME,
+                    60.0,
+                    (120.0, 60.0),
+                );
+                World::draw_text(
+                    frame,
+                    "press enter to restart",
+                    &self.font,
+                    WHITE,
+                    40.0,
+                    (120.0, 120.0),
+                );
+            }
+            _ => {},
+        }
+    }
+
     fn draw_text(
         frame: &mut [u8],
         text: &str,
@@ -781,7 +806,10 @@ impl World<'_> {
 
     fn wait_for_restart(&mut self, moves: &[Move]) {
         if moves.contains(&Move::Enter) {
-            *self = World::new();
+            match self.stream {
+                None => { *self = World::new(GameType::Ai) },
+                Some(_) => { *self = World::new(GameType::LocalNetwork) }
+            }
         }
     }
 

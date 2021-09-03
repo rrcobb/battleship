@@ -8,7 +8,9 @@ use winit::window::WindowBuilder;
 use winit_input_helper::WinitInputHelper;
 
 mod game;
-use crate::game::{World, HEIGHT, WIDTH};
+mod connection;
+
+use crate::game::{World, HEIGHT, WIDTH, GameType};
 
 fn main() -> Result<(), Error> {
     let event_loop = EventLoop::new();
@@ -28,7 +30,7 @@ fn main() -> Result<(), Error> {
         let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
         Pixels::new(WIDTH, HEIGHT, surface_texture)?
     };
-    let mut world = World::new();
+    let mut world = World::new(GameType::LocalNetwork);
 
     event_loop.run(move |event, _, control_flow| {
         // Draw the current frame
