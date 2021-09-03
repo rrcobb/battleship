@@ -93,11 +93,12 @@
 
 TODO:
 - DONE turn virtualkeycodes into "move" objects
-    - DONE,sorta keep a vec of 'moves' to process?
+    - DONE, sorta: keep a vec of 'moves' to process?
 - DONE update the handlers to act based on move objects instead of virtual
     keycodes
 - DONE update ai player to emit moves instead of change its state directly
 - introduce another player 'kind' that gets its moves from a tcp
     connection
     - possibly: put the tcp handling on another thread, and buffer the inputs
+- figure out how to share ship positions after placed
 - on game end, restart again with the same player

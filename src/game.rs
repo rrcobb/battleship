@@ -467,12 +467,13 @@ impl World<'_> {
                 use PlayerStatus::*;
                 match self.this_player.status {
                     Placing => self.place_ships(&moves),
-                    Aiming => self.aim(&moves),
+                    Aiming => World::aim(&moves, &mut self.this_player, &mut self.other_player),
                     Waiting => {
                         let other_moves = self.get_other_moves();
-                        self.other_aim(&other_moves)
+                        World::aim(&other_moves, &mut self.other_player, &mut self.this_player)
                     },
                 }
+                self.check_victory_condition();
             }
             End(_) => {
                 self.wait_for_restart(&moves);
@@ -784,38 +785,18 @@ impl World<'_> {
         }
     }
 
-    fn aim(&mut self, moves: &[Move]) {
+    fn aim(moves: &[Move], player: &mut Player, other_player: &mut Player) {
         for move_ in moves {
             use Move::*;
             match move_ {
-                Down => { self.this_player.target.shift(&Direction::Down); },
-                Up => { self.this_player.target.shift(&Direction::Up); },
-                Right => { self.this_player.target.shift(&Direction::Right); },
-                Left => { self.this_player.target.shift(&Direction::Left); },
+                Down => { player.target.shift(&Direction::Down); },
+                Up => { player.target.shift(&Direction::Up); },
+                Right => { player.target.shift(&Direction::Right); },
+                Left => { player.target.shift(&Direction::Left); },
                 Enter | Space => {
-                    if self.this_player.fire() {
-                        self.this_player.status = PlayerStatus::Waiting;
-                        self.other_player.status = PlayerStatus::Aiming;
-                        self.check_victory_condition();
-                    }
-                }
-            }
-        }
-    }
-
-    fn other_aim(&mut self, moves: &[Move]) {
-        for move_ in moves {
-            use Move::*;
-            match move_ {
-                Down => { self.other_player.target.shift(&Direction::Down); },
-                Up => { self.other_player.target.shift(&Direction::Up); },
-                Right => { self.other_player.target.shift(&Direction::Right); },
-                Left => { self.other_player.target.shift(&Direction::Left); },
-                Enter | Space => {
-                    if self.other_player.fire() {
-                        self.other_player.status = PlayerStatus::Waiting;
-                        self.this_player.status = PlayerStatus::Aiming;
-                        self.check_victory_condition();
+                    if player.fire() {
+                        player.status = PlayerStatus::Waiting;
+                        other_player.status = PlayerStatus::Aiming;
                     }
                 }
             }
