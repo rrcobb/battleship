@@ -17,7 +17,7 @@
     - requires ship names
   - 'score' - ships remaining, per player
 
-- todo: refactor 'Move' struct and variables to a different name to avoid
+- refactor 'Move' struct and variables to a different name to avoid
     conflict with the rust keyword
 
 ## thinking through multiplayer
@@ -28,6 +28,11 @@
 - responds to incoming moves by updating 'other player'
   - both in 'placing' and in 'playing'? probably
 - both sides implement same play logic
+
+- use relay server to share moves between clients, instead of making a direct
+    connection
+- when game type is network, need to: broadcast the moves to the tcp connection
+  - and get moves from the tcp connection from the other player
 
 - introduce another player 'kind' that gets its moves from a tcp connection
     - possibly: put the tcp handling on another thread, and buffer the inputs
@@ -43,6 +48,11 @@
   - improved colors
   - target red should be a different shape (target?)
   - better text sizing / placement
+  - maybe, hide the grids when they aren't in use, instead of showing them at
+      all times
+  - maybe render just one grid, and allow player to switch to looking at their
+      own grid at will
+  - label ships / grids
 - internet / local network version
     - see only your ships
     - try to hit the other player

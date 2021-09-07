@@ -28,15 +28,13 @@ pub(crate) fn listen() -> std::io::Result<TcpStream> {
     }
 }
 
-pub(crate) fn handle_stream(mut stream: TcpStream) {
-    loop {
-        let message = "Move::Up";
-        stream.write(message.as_bytes()).unwrap();
-        stream.flush().unwrap();
+pub(crate) fn broadcast(stream: &mut TcpStream, message: &str) {
+    stream.write(message.as_bytes()).unwrap();
+    stream.flush().unwrap();
+}
 
-        let mut buffer = [0; 1024];
-        stream.read(&mut buffer).unwrap();
-        println!("got message: {}", String::from_utf8_lossy(&buffer[..]));
-
-    }
+pub(crate) fn receive(stream: &mut TcpStream) -> String {
+    let mut buffer = [0; 1024];
+    stream.read(&mut buffer).unwrap();
+    String::from_utf8_lossy(&buffer[..]).into()
 }

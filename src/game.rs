@@ -28,6 +28,8 @@ enum GameStatus {
     End(GameResult),
 }
 
+/// represents the settings ui, before the game has fully started
+/// on game start, GameType becomes part of the GameStatus::Playing enum variant
 struct Settings {
     game_type: GameType,
 }
@@ -416,7 +418,6 @@ pub struct World<'a> {
 impl World<'_> {
     /// render the `World` state to the frame buffer.
     pub fn render(&self, frame: &mut [u8]) {
-        let font = &self.font;
         World::clear_top(frame);
         World::clear_grids(frame);
         World::clear_bottom(frame);
@@ -464,10 +465,13 @@ impl World<'_> {
                 use PlayerStatus::*;
                 match self.this_player.status {
                     Placing => self.place_ships(&moves),
-                    Aiming => World::aim(&moves, &mut self.this_player, &mut self.other_player),
+                    Aiming => {
+                        World::aim(&moves, &mut self.this_player, &mut self.other_player);
+                        self.broadcast_moves(&moves);
+                    },
                     Waiting => {
                         let other_moves = self.get_other_moves();
-                        World::aim(&other_moves, &mut self.other_player, &mut self.this_player)
+                        World::aim(&other_moves, &mut self.other_player, &mut self.this_player);
                     },
                 }
                 self.check_victory_condition();
@@ -503,20 +507,48 @@ impl World<'_> {
     }
 
     fn get_other_moves(&mut self) -> Vec<Move> {
-        let mut moves = vec![];
+        let mut moves: Vec<Move> = vec![];
+        use GameStatus::*;
+        match self.status {
+            Starting | End(_) => {},
+            Playing(game_type) => {
+                use GameType::*;
+                match game_type {
+                    Ai => { moves.push(self.gen_ai_move()); }
+                    LocalNetwork => { moves = self.read_broadcast_moves(); }
+                }
+            }
+        }
+        
+        moves
+    }
+
+    fn read_broadcast_moves(&mut self) -> Vec<Move> {
+        if self.stream.is_some() {
+            let moves_string = receive(self.stream.as_mut().unwrap());
+        }
+        vec![]
+    }
+
+    fn broadcast_moves(&mut self, moves: &[Move]) {
+        if self.stream.is_some() {
+            broadcast(self.stream.as_mut().unwrap(), "fake message");
+        }
+    }
+
+    fn gen_ai_move(&mut self) -> Move {
         // move or shoot with some %
         // on average, move 10 times for every shot
         let shoot: f64 = self.rng.gen();
         match shoot {
             x if x > 0.1 => {
                 let direction: Direction = self.rng.gen();
-                moves.push(direction.into());
+                direction.into()
             }
             _ => {
-                moves.push(Move::Enter);
+                Move::Enter
             }
         }
-        moves
     }
 
     fn begin_game(&mut self) {
@@ -923,9 +955,9 @@ impl World<'_> {
     }
 
 
+    /// winning means all ships are sunk
+    /// so, for every cell in every ship, there's a shot from the other player that hits it
     fn check_victory_condition(&mut self) {
-        // winning means all ships are sunk
-        // so, for every cell in every ship, there's a shot from the other player that hits it
         let loss = self
             .this_player
             .ships
