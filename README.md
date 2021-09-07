@@ -1,14 +1,9 @@
 # Battleship
 
-- layer of indirection for moves, to support alternate game modes (command
-    pattern)
-    - struct "move" that a player / world consumes?
-- starting screen
-- game mode selection
+- More settings
     - ai level
     - ship length? (short ships vs original length ships)
-    - eventually, internet vs local ai
-  - store the hits on the structs instead of recalculating every time
+- store the hits on the structs instead of recalculating every time
 - play vs computer
   - 'smarter' / harder AI
       - doesn't know your ships, but is smarter about where to shoot
@@ -21,6 +16,25 @@
   - Hit! You sunk their x
     - requires ship names
   - 'score' - ships remaining, per player
+
+- todo: refactor 'Move' struct and variables to a different name to avoid
+    conflict with the rust keyword
+
+## thinking through multiplayer
+
+- each side keeps full game state
+- sends 'moves' to the other side
+    - update AI to send a stream of moves
+- responds to incoming moves by updating 'other player'
+  - both in 'placing' and in 'playing'? probably
+- both sides implement same play logic
+
+- introduce another player 'kind' that gets its moves from a tcp connection
+    - possibly: put the tcp handling on another thread, and buffer the inputs
+- figure out how to share ship positions after placed
+- on game end, restart again with the same player
+
+## More TODOs:
 
 - local version: play on the same screen against another person
   - hide placement from each other
@@ -55,6 +69,8 @@
 - nice to have: .bmp's for the ships
 - sounds with https://docs.rs/rodio/0.14.0/rodio/ or something
 
+## DONE
+
 - DONE ship placement / setup
   - DONE move boats with arrow keys
   - DONE confirm with key
@@ -81,24 +97,13 @@
     - DONE choose a library!
     - DONE draw title
 - DONE game end (when all ships are sunk)
-
-## thinking through multiplayer
-
-- each side keeps full game state
-- sends 'moves' to the other side
-    - update AI to send a stream of moves
-- responds to incoming moves by updating 'other player'
-  - both in 'placing' and in 'playing'? probably
-- both sides implement same play logic
-
-TODO:
+- DONE starting screen
+- DONE game mode selection
+    - DONE internet vs local ai
+- DONE layer of indirection for moves, to support alternate game modes (command pattern)
+    - DONE struct "move" that a player / world consumes
 - DONE turn virtualkeycodes into "move" objects
     - DONE, sorta: keep a vec of 'moves' to process?
 - DONE update the handlers to act based on move objects instead of virtual
     keycodes
 - DONE update ai player to emit moves instead of change its state directly
-- introduce another player 'kind' that gets its moves from a tcp
-    connection
-    - possibly: put the tcp handling on another thread, and buffer the inputs
-- figure out how to share ship positions after placed
-- on game end, restart again with the same player

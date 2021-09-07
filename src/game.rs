@@ -9,23 +9,13 @@ use std::convert::From;
 use crate::connection::*;
 use std::net::TcpStream;
 
-/// Representation of the application state, plus some
-pub struct World<'a> {
-    font: Font<'a>,
-    rng: ThreadRng,
-    status: GameStatus,
-    stream: Option<TcpStream>,
-    this_player: Player,
-    other_player: Player,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 enum GameResult {
     Victory,
     Defeat,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum GameType {
     Ai,
     LocalNetwork,
@@ -33,8 +23,13 @@ pub enum GameType {
 
 #[derive(Debug, Clone, PartialEq)]
 enum GameStatus {
-    Playing,
+    Starting,
+    Playing(GameType),
     End(GameResult),
+}
+
+struct Settings {
+    game_type: GameType,
 }
 
 // 0-indexed grid positions
@@ -387,7 +382,7 @@ type Color = [u8; 4];
 const WHITE: Color = [0xff, 0xff, 0xff, 0xff]; // FFFFFF
 const BLACK: Color = [0x00, 0x00, 0x00, 0xff];
 const DARK_GREEN: Color = [0x20, 0x2a, 0x25, 0xff]; // 202A25
-const GRAY: Color = [0xEB, 0xE9, 0xE9, 0xff]; //EBE9E9
+const GRAY: Color = [0xeB, 0xe9, 0xe9, 0xff]; //EBE9E9
 const GREEN: Color = [0x00, 0xA8, 0x78, 0xff]; // 00A878
 const YELLOW: Color = [0xf8, 0xf3, 0x2b, 0xff]; // F8F32B
 const BLUE: Color = [0x6c, 0xcf, 0xf6, 0xff]; // 6CCFF6
@@ -407,44 +402,53 @@ const CELL_WIDTH: usize = 30;
 const CELL_MARGIN: usize = 4;
 const CELL_COUNT: usize = 10;
 
+/// Representation of the application state, plus some
+pub struct World<'a> {
+    font: Font<'a>,
+    rng: ThreadRng,
+    status: GameStatus,
+    stream: Option<TcpStream>,
+    this_player: Player,
+    other_player: Player,
+    settings: Option<Settings>,
+}
+
 impl World<'_> {
-    /// Draw the `World` state to the frame buffer.
-    pub fn draw(&self, frame: &mut [u8]) {
+    /// render the `World` state to the frame buffer.
+    pub fn render(&self, frame: &mut [u8]) {
         let font = &self.font;
         World::clear_top(frame);
         World::clear_grids(frame);
         World::clear_bottom(frame);
 
         match self.status {
-            GameStatus::Playing => {
+            GameStatus::Starting => { 
+                self.draw_start_screen(frame);
+            }
+            GameStatus::Playing(_) => {
                 self.draw_ships(frame);
                 self.draw_shots(frame);
                 self.draw_target(frame);
 
-                self.draw_info(frame, font);
+                self.draw_info(frame);
             }
             GameStatus::End(_) => self.draw_end_message(frame),
         }
     }
 
     /// Create a new `World` instance with empty values
-    pub fn new(game_type: GameType) -> Self {
+    pub fn new() -> Self {
         let font_data = include_bytes!("./source-code-pro-regular.ttf");
         let font = Font::try_from_bytes(font_data as &[u8]).unwrap();
-
-        use GameType::*;
-        let stream = match game_type {
-            Ai => None,
-            LocalNetwork => Some(try_connect().unwrap()),
-        };
 
         World {
             this_player: Player::new(),
             other_player: Player::new(),
-            status: GameStatus::Playing,
+            status: GameStatus::Starting,
             font,
-            stream,
+            stream: None,
             rng: thread_rng(),
+            settings: Some(Settings { game_type: GameType::LocalNetwork }),
         }
     }
 
@@ -453,7 +457,10 @@ impl World<'_> {
         use GameStatus::*;
         let moves = self.get_input_moves(input);
         match self.status {
-            Playing => {
+            Starting => { 
+                self.select_game_type(&moves); 
+            },
+            Playing(_) => {
                 use PlayerStatus::*;
                 match self.this_player.status {
                     Placing => self.place_ships(&moves),
@@ -643,31 +650,48 @@ impl World<'_> {
         }
     }
 
-    fn draw_info(&self, frame: &mut [u8], font: &Font) {
+
+    fn draw_start_screen(&self, frame: &mut [u8]) {
+        World::draw_text(frame, "Battleship", &self.font, GREEN, 60.0, (20.0, 0.0));
+        if let Some(settings) = &self.settings {
+            let (network_color, ai_color) = match settings.game_type {
+                GameType::LocalNetwork => (YELLOW, GREEN),
+                GameType::Ai => (GREEN, YELLOW)
+            };
+            World::draw_text(frame, "start local network game", &self.font, network_color, 40.0, (40.0, 60.0));
+            World::draw_text(frame, "start game vs. computer", &self.font, ai_color, 40.0, (40.0, 100.0));
+            
+            let instructions = "up and down to select, enter to start"; 
+            World::draw_text(frame, instructions, &self.font, WHITE, 22.0, (40.0, 150.0));
+        }
+    }
+
+    fn draw_info(&self, frame: &mut [u8]) {
+        let font = &self.font;
         // title text
         World::draw_text(frame, "Battleship", font, GREEN, 60.0, (20.0, 0.0));
 
         match self.this_player.status {
             PlayerStatus::Placing => {
-                World::draw_text(frame, "Place your ships!", font, WHITE, 40.0, (220.0, 60.0));
-                let height = 24.0;
+                World::draw_text(frame, "Place your ships!", font, WHITE, 40.0, (200.0, 60.0));
+                let height = 22.0;
                 for (i, text) in ["arrow keys to move", "space to rotate", "enter to place"]
                     .iter()
                     .enumerate()
                 {
                     let y = 100.0 + i as f32 * height;
-                    World::draw_text(frame, text, font, WHITE, height, (220.0, y));
+                    World::draw_text(frame, text, font, WHITE, height, (250.0, y));
                 }
             }
             PlayerStatus::Aiming => {
-                World::draw_text(frame, "Take aim!", font, WHITE, 40.0, (220.0, 60.0));
-                let height = 24.0;
+                World::draw_text(frame, "Take aim!", font, WHITE, 40.0, (200.0, 60.0));
+                let height = 22.0;
                 for (i, text) in ["arrow keys to move", "space or enter to fire"]
                     .iter()
                     .enumerate()
                 {
                     let y = 100.0 + i as f32 * height;
-                    World::draw_text(frame, text, font, WHITE, height, (220.0, y));
+                    World::draw_text(frame, text, font, GREEN, height, (250.0, y));
                 }
             }
             PlayerStatus::Waiting => {
@@ -806,10 +830,8 @@ impl World<'_> {
 
     fn wait_for_restart(&mut self, moves: &[Move]) {
         if moves.contains(&Move::Enter) {
-            match self.stream {
-                None => { *self = World::new(GameType::Ai) },
-                Some(_) => { *self = World::new(GameType::LocalNetwork) }
-            }
+            // TODO: restart with existing stream if connected to an opponent
+            *self = World::new()
         }
     }
 
@@ -871,6 +893,35 @@ impl World<'_> {
             }
         }
     }
+
+    fn select_game_type(&mut self, moves: &[Move]) {
+        use Move::*;
+        use GameType::*;
+        for _move in moves {
+            match _move {
+                Up | Down => {
+                    let game_type = match &self.settings {
+                        None => LocalNetwork,
+                        Some(s) if s.game_type == Ai => LocalNetwork,
+                        Some(_) => Ai,
+                    };
+                    self.settings = Some(Settings { game_type });
+                }
+                Enter => {
+                    if let Some(settings) = &self.settings {
+                        self.stream = match settings.game_type {
+                            Ai => None,
+                            LocalNetwork => Some(try_connect().unwrap()),
+                        };
+                        self.status = GameStatus::Playing(settings.game_type);
+                    }
+                }
+                _ => {},
+            }
+        }
+
+    }
+
 
     fn check_victory_condition(&mut self) {
         // winning means all ships are sunk
