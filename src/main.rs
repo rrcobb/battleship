@@ -7,6 +7,7 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 use winit_input_helper::WinitInputHelper;
 
+mod colors;
 mod connection;
 mod game;
 

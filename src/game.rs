@@ -1,4 +1,3 @@
-use crate::connection::*;
 use rand::prelude::Distribution;
 use rand::{distributions::Standard, rngs::ThreadRng, thread_rng, Rng};
 use rusttype::{point, Font, Scale};
@@ -7,6 +6,9 @@ use std::convert::From;
 use std::iter::{once, repeat};
 use winit::event::VirtualKeyCode;
 use winit_input_helper::WinitInputHelper;
+
+use crate::colors::*;
+use crate::connection::*;
 
 #[derive(Debug, Clone, PartialEq)]
 enum GameResult {
@@ -77,10 +79,10 @@ impl Cell {
 
     fn random_seq(len: &u8, rng: &mut ThreadRng) -> Vec<Cell> {
         let cell: Cell = rng.gen();
-        cell.extend(rng, len)
+        cell.extend_random_direction(rng, len)
     }
 
-    fn extend(&self, rng: &mut ThreadRng, len: &u8) -> Vec<Cell> {
+    fn extend_random_direction(&self, rng: &mut ThreadRng, len: &u8) -> Vec<Cell> {
         let mut cell = self.clone();
         let mut res = Vec::new();
         let mut valid = false;
@@ -93,6 +95,21 @@ impl Cell {
                 // ensure all cells are valid shifts
                 valid = valid && cell.shift(&direction);
             }
+        }
+        res
+    }
+
+    fn seq_from_origin(len: u8) -> Vec<Cell> {
+        let cell = Cell { x: 0, y: 0 };
+        cell.extend_down(len)
+    }
+
+    fn extend_down(&self, len: u8) -> Vec<Cell> {
+        let mut cell = self.clone();
+        let mut res = Vec::new();
+        for _i in 0..len {
+            res.push(cell.clone());
+            cell.shift(&Direction::Down);
         }
         res
     }
@@ -113,13 +130,6 @@ enum ShipStatus {
     Hidden,
     Placing,
     Locked,
-}
-
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-struct Ship {
-    status: ShipStatus,
-    len: u8,
-    cells: Vec<Cell>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -156,12 +166,18 @@ impl Direction {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+struct Ship {
+    status: ShipStatus,
+    len: u8,
+    cells: Vec<Cell>,
+}
+
 impl Ship {
     fn random_five(rng: &mut ThreadRng) -> Vec<Self> {
         use ShipStatus::*;
-        let lengths = [2, 3, 4, 4, 5];
         let mut ships = Vec::new();
-        for len in lengths.iter() {
+        for len in [2, 3, 4, 4, 5].iter() {
             let cells = Cell::random_seq(len, rng);
             let mut ship = Ship {
                 status: Locked,
@@ -183,53 +199,16 @@ impl Ship {
 
     fn original_length_ships() -> Vec<Self> {
         use ShipStatus::*;
-        vec![
-            Ship {
-                status: Placing,
-                len: 2,
-                cells: vec![Cell { x: 0, y: 0 }, Cell { x: 1, y: 0 }],
-            },
-            Ship {
+        let mut res: Vec<Self> = [2, 3, 4, 4, 5]
+            .iter()
+            .map(|&len| Ship {
                 status: Hidden,
-                len: 3,
-                cells: vec![
-                    Cell { x: 0, y: 0 },
-                    Cell { x: 1, y: 0 },
-                    Cell { x: 2, y: 0 },
-                ],
-            },
-            Ship {
-                status: Hidden,
-                len: 3,
-                cells: vec![
-                    Cell { x: 0, y: 0 },
-                    Cell { x: 1, y: 0 },
-                    Cell { x: 2, y: 0 },
-                    Cell { x: 3, y: 0 },
-                ],
-            },
-            Ship {
-                status: Hidden,
-                len: 4,
-                cells: vec![
-                    Cell { x: 0, y: 0 },
-                    Cell { x: 1, y: 0 },
-                    Cell { x: 2, y: 0 },
-                    Cell { x: 3, y: 0 },
-                ],
-            },
-            Ship {
-                status: Hidden,
-                len: 5,
-                cells: vec![
-                    Cell { x: 0, y: 0 },
-                    Cell { x: 1, y: 0 },
-                    Cell { x: 2, y: 0 },
-                    Cell { x: 3, y: 0 },
-                    Cell { x: 4, y: 0 },
-                ],
-            },
-        ]
+                len,
+                cells: Cell::seq_from_origin(len),
+            })
+            .collect();
+        res[0].status = Placing;
+        res
     }
 
     fn shift(&mut self, direction: &Direction) {
@@ -258,10 +237,11 @@ impl Ship {
         }
     }
 
+    /// for the cell i
+    /// move in the (x,y) direction i times
     fn rotate_right(&mut self) {
-        // for the cell i
-        // move x,y i times
-        // direction-finding: difference between cells[0] and cells[1]
+        // find the current direction:
+        // difference between cells[0] and cells[1]
         let one = &self.cells[0];
         let two = &self.cells[1];
         let (x, y): (i8, i8) = match (one.x as i8 - two.x as i8, one.y as i8 - two.y as i8) {
@@ -292,10 +272,6 @@ impl Ship {
         if valid {
             self.cells = shifted;
         }
-    }
-
-    fn placing(&mut self) {
-        self.status = ShipStatus::Placing;
     }
 
     fn any_overlap(ship: &Ship, ships: &[Ship]) -> bool {
@@ -335,15 +311,13 @@ impl Player {
     }
 
     fn ship_to_place(&self) -> Option<&Ship> {
-        self.ships
-            .iter()
-            .find(|ship| ship.status == ShipStatus::Placing)
+        use ShipStatus::*;
+        self.ships.iter().find(|ship| ship.status == Placing)
     }
 
     fn ship_to_place_mut(&mut self) -> Option<&mut Ship> {
-        self.ships
-            .iter_mut()
-            .find(|ship| ship.status == ShipStatus::Placing)
+        use ShipStatus::*;
+        self.ships.iter_mut().find(|ship| ship.status == Placing)
     }
 
     fn fire(&mut self) -> bool {
@@ -356,16 +330,12 @@ impl Player {
         !overlaps_shot
     }
 
-    fn ship_to_place_overlaps_any_locked(&self) -> bool {
-        if let Some(ship) = self.ship_to_place() {
-            Ship::any_overlap(&ship, &self.ships)
-        } else {
-            false
-        }
-    }
-
     fn lock_ship(&mut self) -> bool {
-        let overlap = self.ship_to_place_overlaps_any_locked();
+        let overlap = match self.ship_to_place() {
+            Some(ship) => Ship::any_overlap(&ship, &self.ships),
+            None => false
+        };
+
         if !overlap {
             if let Some(ship) = self.ship_to_place_mut() {
                 ship.status = ShipStatus::Locked;
@@ -375,23 +345,6 @@ impl Player {
         false
     }
 }
-
-// type alias for colors
-type Color = [u8; 4];
-
-// consts for colors
-const WHITE: Color = [0xff, 0xff, 0xff, 0xff]; // FFFFFF
-const BLACK: Color = [0x00, 0x00, 0x00, 0xff];
-const DARK_GREEN: Color = [0x20, 0x2a, 0x25, 0xff]; // 202A25
-const GRAY: Color = [0xeB, 0xe9, 0xe9, 0xff]; //EBE9E9
-const GREEN: Color = [0x00, 0xA8, 0x78, 0xff]; // 00A878
-const YELLOW: Color = [0xf8, 0xf3, 0x2b, 0xff]; // F8F32B
-const BLUE: Color = [0x6c, 0xcf, 0xf6, 0xff]; // 6CCFF6
-const FLAME: Color = [0xcf, 0x5c, 0x36, 0xff]; // CF5C36
-
-const GRID_LINES: Color = GRAY;
-const GRID_EMPTY: Color = BLUE;
-const BACKGROUND: Color = DARK_GREEN;
 
 // frame size consts
 pub const WIDTH: u32 = 720;
@@ -403,15 +356,15 @@ const CELL_WIDTH: usize = 30;
 const CELL_MARGIN: usize = 4;
 const CELL_COUNT: usize = 10;
 
-/// Representation of the application state, plus some
+/// Representation of the application state, plus some helpers (font, rng, tcp stream)
 pub struct World<'a> {
-    font: Font<'a>,
-    rng: ThreadRng,
     status: GameStatus,
-    stream: Option<LinesCodec>,
     this_player: Player,
     other_player: Player,
     settings: Option<Settings>,
+    font: Font<'a>,
+    rng: ThreadRng,
+    stream: Option<LinesCodec>,
 }
 
 impl World<'_> {
@@ -422,14 +375,11 @@ impl World<'_> {
         World::clear_bottom(frame);
 
         match self.status {
-            GameStatus::Starting => {
-                self.draw_start_screen(frame);
-            }
+            GameStatus::Starting => self.draw_start_screen(frame),
             GameStatus::Playing(_) => {
                 self.draw_ships(frame);
                 self.draw_shots(frame);
                 self.draw_target(frame);
-
                 self.draw_info(frame);
             }
             GameStatus::End(_) => self.draw_end_message(frame),
@@ -438,7 +388,7 @@ impl World<'_> {
 
     /// Create a new `World` instance with empty values
     pub fn new() -> Self {
-        let font_data = include_bytes!("./source-code-pro-regular.ttf");
+        let font_data = include_bytes!("../assets/source-code-pro-regular.ttf");
         let font = Font::try_from_bytes(font_data as &[u8]).unwrap();
 
         World {
@@ -512,24 +462,14 @@ impl World<'_> {
     }
 
     fn get_other_actions(&mut self) -> Vec<Action> {
-        let mut actions: Vec<Action> = vec![];
         use GameStatus::*;
-        match self.status {
-            Starting | End(_) => {}
-            Playing(game_type) => {
-                use GameType::*;
-                match game_type {
-                    Ai => {
-                        actions.push(self.gen_ai_actions());
-                    }
-                    LocalNetwork => {
-                        actions = self.read_broadcast_actions();
-                    }
-                }
-            }
-        }
+        use GameType::*;
 
-        actions
+        match self.status {
+            Starting | End(_) => { unreachable!("should not be reading the other players actions unless we are Playing") }
+            Playing(Ai) => self.gen_ai_actions(),
+            Playing(LocalNetwork) => self.receive_broadcast_actions()
+        }
     }
 
     fn broadcast_ship_positions(&mut self) {
@@ -551,7 +491,7 @@ impl World<'_> {
         }
     }
 
-    fn read_broadcast_actions(&mut self) -> Vec<Action> {
+    fn receive_broadcast_actions(&mut self) -> Vec<Action> {
         if self.stream.is_some() {
             let actions_string = self.stream.as_mut().unwrap().read_message().unwrap();
             ron::de::from_str(&actions_string).unwrap()
@@ -561,7 +501,7 @@ impl World<'_> {
     }
 
     fn broadcast_actions(&mut self, actions: &[Action]) {
-        if self.stream.is_some() {
+        if self.stream.is_some() && !actions.is_empty() {
             let message = ron::ser::to_string(&actions).unwrap();
             match self.stream.as_mut().unwrap().send_message(&message) {
                 Ok(_) => {}
@@ -570,32 +510,30 @@ impl World<'_> {
         }
     }
 
-    fn gen_ai_actions(&mut self) -> Action {
+    fn gen_ai_actions(&mut self) -> Vec<Action> {
         // move or shoot with some %
         // on average, move 10 times for every shot
         let shoot: f64 = self.rng.gen();
-        match shoot {
+        let action = match shoot {
             x if x > 0.1 => {
                 let direction: Direction = self.rng.gen();
                 direction.into()
             }
             _ => Action::Enter,
-        }
+        };
+        vec![action]
     }
 
     fn begin_game(&mut self) {
         match self.status {
             GameStatus::Playing(GameType::Ai) => {
                 self.other_player.ships = Ship::random_five(&mut self.rng);
-                // for now, you have the first turn
                 self.other_player.status = PlayerStatus::Waiting;
                 self.this_player.status = PlayerStatus::Aiming;
             }
             GameStatus::Playing(GameType::LocalNetwork) => {
-                // I think this won't deadlock...
                 self.broadcast_ship_positions();
                 self.other_player.ships = self.receive_ship_positions();
-                // not sure the consequences of having both players aiming at the same time
                 self.other_player.status = PlayerStatus::Waiting;
                 self.this_player.status = PlayerStatus::Aiming;
             }
@@ -968,7 +906,7 @@ impl World<'_> {
                             .iter_mut()
                             .find(|s| s.status == ShipStatus::Hidden);
                         match next {
-                            Some(ship) => ship.placing(),
+                            Some(ship) => ship.status = ShipStatus::Placing,
                             None => self.begin_game(),
                         }
                     }
