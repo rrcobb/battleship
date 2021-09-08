@@ -7,8 +7,8 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 use winit_input_helper::WinitInputHelper;
 
-mod game;
 mod connection;
+mod game;
 
 use crate::game::{World, HEIGHT, WIDTH};
 

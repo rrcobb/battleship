@@ -1,6 +1,6 @@
+use std::io::{self, BufRead, Write};
 use std::net::TcpListener;
 use std::net::TcpStream;
-use std::io::{self, BufRead, Write};
 
 static HOST: &str = "127.0.0.1";
 static PORT: &str = "7878";
@@ -42,7 +42,6 @@ impl LinesCodec {
     }
 }
 
-
 pub(crate) fn try_connect() -> std::io::Result<LinesCodec> {
     if let Ok(stream) = TcpStream::connect(format!("{}:{}", HOST, PORT)) {
         println!("Connected to host at {}:{}", HOST, PORT);
@@ -54,7 +53,8 @@ pub(crate) fn try_connect() -> std::io::Result<LinesCodec> {
 
 pub(crate) fn listen() -> std::io::Result<LinesCodec> {
     let address = format!("{}:{}", HOST, PORT);
-    let listener = TcpListener::bind(&address).expect(&format!("Could not bind to address: {}", &address));
+    let listener =
+        TcpListener::bind(&address).expect(&format!("Could not bind to address: {}", &address));
     println!("listening at {}", address);
 
     match listener.accept() {
@@ -62,6 +62,6 @@ pub(crate) fn listen() -> std::io::Result<LinesCodec> {
             println!("accepted connection from {}", addr);
             LinesCodec::new(stream)
         }
-        Err(e) => Err(e)
+        Err(e) => Err(e),
     }
 }

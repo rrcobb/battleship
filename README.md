@@ -1,46 +1,39 @@
 # Battleship
 
-- More settings
-    - ai level
-    - ship length? (short ships vs original length ships)
-- store the hits on the structs instead of recalculating every time
 - play vs computer
   - 'smarter' / harder AI
       - doesn't know your ships, but is smarter about where to shoot
-- messages for hit/miss log
+    - update AI to send a stream of moves
+- more info messages
   - Waiting for your opponent to (place their ships)
   - Waiting for your opponent to (fire)
+     - (will need some state for this I think)
   - Miss...
   - Hit!
   - sunk ship messages
   - Hit! You sunk their x
     - requires ship names
   - 'score' - ships remaining, per player
-
-- refactor 'Move' struct and variables to a different name to avoid
-    conflict with the rust keyword
+  - show current game type
 
 ## thinking through multiplayer
 
-- each side keeps full game state
-- sends 'moves' to the other side
-    - update AI to send a stream of moves
-- responds to incoming moves by updating 'other player'
-  - both in 'placing' and in 'playing'? probably
-- both sides implement same play logic
-
+- don't send empty vecs across the wire
+- add liveness info, handle connection errors gracefully
+    - send 'I'm alive' pings
+    - poll instead of blocking wait for opponent
+    - attempt to reconnect if connection lost
 - use relay server to share moves between clients, instead of making a direct
     connection
-- when game type is network, need to: broadcast the moves to the tcp connection
-  - and get moves from the tcp connection from the other player
-
-- introduce another player 'kind' that gets its moves from a tcp connection
-    - possibly: put the tcp handling on another thread, and buffer the inputs
-- figure out how to share ship positions after placed
-- on game end, restart again with the same player
+    - like... just http?
+- move tcp stuff to a thread
+- on game end, restart again with the same player?
 
 ## More TODOs:
 
+- More settings
+    - ai level
+    - ship length? (short ships vs original length ships)
 - local version: play on the same screen against another person
   - hide placement from each other
   - just targeting / hits / misses
@@ -63,13 +56,14 @@
 - movement rerendering is... slow somehow?
     - is this waiting on inputs too slowly?
 - refactors and perf improvements
+    - keep a rendered font gpu cache
     - keep more state, do less compute
       - ship status
       - shot status (hit or miss)
       - overlaps - change data structure?
+    - store the hits on the structs instead of recalculating every time
     - don't redraw the 'entire' world every time
         - track changes?
-    - keep a rendered font gpu cache
   - should things like font and rng use lazy-static globals?
 
 - Build for windows, mac, web
@@ -117,3 +111,13 @@
 - DONE update the handlers to act based on move objects instead of virtual
     keycodes
 - DONE update ai player to emit moves instead of change its state directly
+- DONE refactor 'Move' struct and variables to a different name to avoid
+    conflict with the rust keyword
+- DONE each side keeps full game state
+- DONE sends 'moves' to the other side
+- DONE responds to incoming moves by updating 'other player'
+- DONE both sides implement same play logic
+- DONE when game type is network, need to: broadcast the moves to the tcp connection
+  - DONE and get moves from the tcp connection from the other player
+- DONE update other player's ships
+- DONE figure out how to share ship positions after placed

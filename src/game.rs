@@ -1,12 +1,12 @@
+use crate::connection::*;
 use rand::prelude::Distribution;
 use rand::{distributions::Standard, rngs::ThreadRng, thread_rng, Rng};
 use rusttype::{point, Font, Scale};
+use serde::{Deserialize, Serialize};
+use std::convert::From;
+use std::iter::{once, repeat};
 use winit::event::VirtualKeyCode;
 use winit_input_helper::WinitInputHelper;
-use std::iter::{once, repeat};
-use std::convert::From;
-use serde::{Serialize, Deserialize};
-use crate::connection::*;
 
 #[derive(Debug, Clone, PartialEq)]
 enum GameResult {
@@ -34,14 +34,14 @@ struct Settings {
 }
 
 // 0-indexed grid positions
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 struct Cell {
     x: u8,
     y: u8,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-enum Move {
+enum Action {
     Enter,
     Space,
     Right,
@@ -50,14 +50,14 @@ enum Move {
     Down,
 }
 
-impl From<Direction> for Move {
+impl From<Direction> for Action {
     fn from(item: Direction) -> Self {
         use Direction::*;
         match item {
-            Up => Move::Up,
-            Down => Move::Down,
-            Right => Move::Right,
-            Left => Move::Left,
+            Up => Action::Up,
+            Down => Action::Down,
+            Right => Action::Right,
+            Left => Action::Left,
         }
     }
 }
@@ -107,7 +107,7 @@ impl Distribution<Cell> for Standard {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 enum ShipStatus {
     #[default]
     Hidden,
@@ -115,7 +115,7 @@ enum ShipStatus {
     Locked,
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 struct Ship {
     status: ShipStatus,
     len: u8,
@@ -422,7 +422,7 @@ impl World<'_> {
         World::clear_bottom(frame);
 
         match self.status {
-            GameStatus::Starting => { 
+            GameStatus::Starting => {
                 self.draw_start_screen(frame);
             }
             GameStatus::Playing(_) => {
@@ -448,97 +448,129 @@ impl World<'_> {
             font,
             stream: None,
             rng: thread_rng(),
-            settings: Some(Settings { game_type: GameType::LocalNetwork }),
+            settings: Some(Settings {
+                game_type: GameType::LocalNetwork,
+            }),
         }
     }
 
     /// Update the `World` internal state
     pub fn update(&mut self, input: &WinitInputHelper) {
         use GameStatus::*;
-        let moves = self.get_input_moves(input);
+        let actions = self.get_input_actions(input);
         match self.status {
-            Starting => { 
-                self.select_game_type(&moves); 
-            },
+            Starting => {
+                self.select_game_type(&actions);
+            }
             Playing(_) => {
                 use PlayerStatus::*;
                 match self.this_player.status {
-                    Placing => self.place_ships(&moves),
+                    Placing => self.place_ships(&actions),
                     Aiming => {
-                        World::aim(&moves, &mut self.this_player, &mut self.other_player);
-                        self.broadcast_moves(&moves);
-                    },
+                        World::aim(&actions, &mut self.this_player, &mut self.other_player);
+                        self.broadcast_actions(&actions);
+                    }
                     Waiting => {
-                        let other_moves = self.get_other_moves();
-                        World::aim(&other_moves, &mut self.other_player, &mut self.this_player);
-                    },
+                        let other_actions = self.get_other_actions();
+                        World::aim(
+                            &other_actions,
+                            &mut self.other_player,
+                            &mut self.this_player,
+                        );
+                    }
                 }
                 self.check_victory_condition();
             }
             End(_) => {
-                self.wait_for_restart(&moves);
+                self.wait_for_restart(&actions);
             }
         }
     }
 
-    fn get_input_moves(&self, input: &WinitInputHelper) -> Vec<Move> {
-        use Move::*;
-        let mut moves = vec![];
+    fn get_input_actions(&self, input: &WinitInputHelper) -> Vec<Action> {
+        use Action::*;
+        let mut actions = vec![];
         if input.key_pressed(VirtualKeyCode::Return) {
-            moves.push(Enter);
+            actions.push(Enter);
         }
         if input.key_pressed(VirtualKeyCode::Space) {
-            moves.push(Space);
+            actions.push(Space);
         }
         if input.key_pressed(VirtualKeyCode::Up) {
-            moves.push(Up);
+            actions.push(Up);
         }
         if input.key_pressed(VirtualKeyCode::Down) {
-            moves.push(Down);
+            actions.push(Down);
         }
         if input.key_pressed(VirtualKeyCode::Right) {
-            moves.push(Right);
+            actions.push(Right);
         }
         if input.key_pressed(VirtualKeyCode::Left) {
-            moves.push(Left);
+            actions.push(Left);
         }
-        moves
+        actions
     }
 
-    fn get_other_moves(&mut self) -> Vec<Move> {
-        let mut moves: Vec<Move> = vec![];
+    fn get_other_actions(&mut self) -> Vec<Action> {
+        let mut actions: Vec<Action> = vec![];
         use GameStatus::*;
         match self.status {
-            Starting | End(_) => {},
+            Starting | End(_) => {}
             Playing(game_type) => {
                 use GameType::*;
                 match game_type {
-                    Ai => { moves.push(self.gen_ai_move()); }
-                    LocalNetwork => { moves = self.read_broadcast_moves(); }
+                    Ai => {
+                        actions.push(self.gen_ai_actions());
+                    }
+                    LocalNetwork => {
+                        actions = self.read_broadcast_actions();
+                    }
                 }
             }
         }
-        
-        moves
+
+        actions
     }
 
-    fn read_broadcast_moves(&mut self) -> Vec<Move> {
+    fn broadcast_ship_positions(&mut self) {
         if self.stream.is_some() {
-            let moves_string = self.stream.as_mut().unwrap().read_message().unwrap();
-            ron::de::from_str(&moves_string).unwrap()
+            let message = ron::ser::to_string(&self.this_player.ships).unwrap();
+            match self.stream.as_mut().unwrap().send_message(&message) {
+                Ok(_) => {}
+                Err(e) => panic!("could not send message to connection, {}", e),
+            };
+        }
+    }
+
+    fn receive_ship_positions(&mut self) -> Vec<Ship> {
+        if self.stream.is_some() {
+            let actions_string = self.stream.as_mut().unwrap().read_message().unwrap();
+            ron::de::from_str(&actions_string).unwrap()
         } else {
-            vec![]
+            panic!("no connection, cannot read ship positions.");
         }
     }
 
-    fn broadcast_moves(&mut self, moves: &[Move]) {
+    fn read_broadcast_actions(&mut self) -> Vec<Action> {
         if self.stream.is_some() {
-            let message = ron::ser::to_string(&moves).unwrap();
-            self.stream.as_mut().unwrap().send_message(&message);
+            let actions_string = self.stream.as_mut().unwrap().read_message().unwrap();
+            ron::de::from_str(&actions_string).unwrap()
+        } else {
+            panic!("no connection, cannot get the other player's moves.")
         }
     }
 
-    fn gen_ai_move(&mut self) -> Move {
+    fn broadcast_actions(&mut self, actions: &[Action]) {
+        if self.stream.is_some() {
+            let message = ron::ser::to_string(&actions).unwrap();
+            match self.stream.as_mut().unwrap().send_message(&message) {
+                Ok(_) => {}
+                Err(e) => panic!("could not send message to connection, {}", e),
+            }
+        }
+    }
+
+    fn gen_ai_actions(&mut self) -> Action {
         // move or shoot with some %
         // on average, move 10 times for every shot
         let shoot: f64 = self.rng.gen();
@@ -547,19 +579,28 @@ impl World<'_> {
                 let direction: Direction = self.rng.gen();
                 direction.into()
             }
-            _ => {
-                Move::Enter
-            }
+            _ => Action::Enter,
         }
     }
 
     fn begin_game(&mut self) {
-        // for now, the game mode is: other player is a dumb AI
-        // and places the ships exactly where you placed them
-        self.other_player.ships = Ship::random_five(&mut self.rng);
-        // for now, you have the first turn
-        self.other_player.status = PlayerStatus::Waiting;
-        self.this_player.status = PlayerStatus::Aiming;
+        match self.status {
+            GameStatus::Playing(GameType::Ai) => {
+                self.other_player.ships = Ship::random_five(&mut self.rng);
+                // for now, you have the first turn
+                self.other_player.status = PlayerStatus::Waiting;
+                self.this_player.status = PlayerStatus::Aiming;
+            }
+            GameStatus::Playing(GameType::LocalNetwork) => {
+                // I think this won't deadlock...
+                self.broadcast_ship_positions();
+                self.other_player.ships = self.receive_ship_positions();
+                // not sure the consequences of having both players aiming at the same time
+                self.other_player.status = PlayerStatus::Waiting;
+                self.this_player.status = PlayerStatus::Aiming;
+            }
+            _ => {}
+        }
     }
 
     fn clear_top(frame: &mut [u8]) {
@@ -684,18 +725,31 @@ impl World<'_> {
         }
     }
 
-
     fn draw_start_screen(&self, frame: &mut [u8]) {
         World::draw_text(frame, "Battleship", &self.font, GREEN, 60.0, (20.0, 0.0));
         if let Some(settings) = &self.settings {
             let (network_color, ai_color) = match settings.game_type {
                 GameType::LocalNetwork => (YELLOW, GREEN),
-                GameType::Ai => (GREEN, YELLOW)
+                GameType::Ai => (GREEN, YELLOW),
             };
-            World::draw_text(frame, "start local network game", &self.font, network_color, 40.0, (40.0, 60.0));
-            World::draw_text(frame, "start game vs. computer", &self.font, ai_color, 40.0, (40.0, 100.0));
-            
-            let instructions = "up and down to select, enter to start"; 
+            World::draw_text(
+                frame,
+                "start local network game",
+                &self.font,
+                network_color,
+                40.0,
+                (40.0, 60.0),
+            );
+            World::draw_text(
+                frame,
+                "start game vs. computer",
+                &self.font,
+                ai_color,
+                40.0,
+                (40.0, 100.0),
+            );
+
+            let instructions = "up and down to select, enter to start";
             World::draw_text(frame, instructions, &self.font, WHITE, 22.0, (40.0, 150.0));
         }
     }
@@ -770,7 +824,14 @@ impl World<'_> {
     fn draw_end_message(&self, frame: &mut [u8]) {
         match self.status {
             GameStatus::End(GameResult::Victory) => {
-                World::draw_text(frame, "Glorious Victory!", &self.font, GREEN, 60.0, (120.0, 60.0));
+                World::draw_text(
+                    frame,
+                    "Glorious Victory!",
+                    &self.font,
+                    GREEN,
+                    60.0,
+                    (120.0, 60.0),
+                );
                 World::draw_text(
                     frame,
                     "press enter to restart",
@@ -798,7 +859,7 @@ impl World<'_> {
                     (120.0, 120.0),
                 );
             }
-            _ => {},
+            _ => {}
         }
     }
 
@@ -862,21 +923,29 @@ impl World<'_> {
         }
     }
 
-    fn wait_for_restart(&mut self, moves: &[Move]) {
-        if moves.contains(&Move::Enter) {
+    fn wait_for_restart(&mut self, actions: &[Action]) {
+        if actions.contains(&Action::Enter) {
             // TODO: restart with existing stream if connected to an opponent
             *self = World::new()
         }
     }
 
-    fn aim(moves: &[Move], player: &mut Player, other_player: &mut Player) {
-        for move_ in moves {
-            use Move::*;
-            match move_ {
-                Down => { player.target.shift(&Direction::Down); },
-                Up => { player.target.shift(&Direction::Up); },
-                Right => { player.target.shift(&Direction::Right); },
-                Left => { player.target.shift(&Direction::Left); },
+    fn aim(actions: &[Action], player: &mut Player, other_player: &mut Player) {
+        for action in actions {
+            use Action::*;
+            match action {
+                Down => {
+                    player.target.shift(&Direction::Down);
+                }
+                Up => {
+                    player.target.shift(&Direction::Up);
+                }
+                Right => {
+                    player.target.shift(&Direction::Right);
+                }
+                Left => {
+                    player.target.shift(&Direction::Left);
+                }
                 Enter | Space => {
                     if player.fire() {
                         player.status = PlayerStatus::Waiting;
@@ -887,10 +956,10 @@ impl World<'_> {
         }
     }
 
-    fn place_ships(&mut self, moves: &[Move]) {
-        for _move in moves {
-            use Move::*;
-            match _move {
+    fn place_ships(&mut self, actions: &[Action]) {
+        for action in actions {
+            use Action::*;
+            match action {
                 Enter => {
                     if self.this_player.lock_ship() {
                         let next = self
@@ -903,7 +972,7 @@ impl World<'_> {
                             None => self.begin_game(),
                         }
                     }
-                },
+                }
                 Down => {
                     let ship = self.this_player.ship_to_place_mut().unwrap();
                     ship.shift(&Direction::Down);
@@ -928,11 +997,11 @@ impl World<'_> {
         }
     }
 
-    fn select_game_type(&mut self, moves: &[Move]) {
-        use Move::*;
+    fn select_game_type(&mut self, actions: &[Action]) {
+        use Action::*;
         use GameType::*;
-        for _move in moves {
-            match _move {
+        for _action in actions {
+            match _action {
                 Up | Down => {
                     let game_type = match &self.settings {
                         None => LocalNetwork,
@@ -950,12 +1019,10 @@ impl World<'_> {
                         self.status = GameStatus::Playing(settings.game_type);
                     }
                 }
-                _ => {},
+                _ => {}
             }
         }
-
     }
-
 
     /// winning means all ships are sunk
     /// so, for every cell in every ship, there's a shot from the other player that hits it
