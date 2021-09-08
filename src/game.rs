@@ -5,9 +5,8 @@ use winit::event::VirtualKeyCode;
 use winit_input_helper::WinitInputHelper;
 use std::iter::{once, repeat};
 use std::convert::From;
-
+use serde::{Serialize, Deserialize};
 use crate::connection::*;
-use std::net::TcpStream;
 
 #[derive(Debug, Clone, PartialEq)]
 enum GameResult {
@@ -41,7 +40,7 @@ struct Cell {
     y: u8,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 enum Move {
     Enter,
     Space,
@@ -409,7 +408,7 @@ pub struct World<'a> {
     font: Font<'a>,
     rng: ThreadRng,
     status: GameStatus,
-    stream: Option<TcpStream>,
+    stream: Option<LinesCodec>,
     this_player: Player,
     other_player: Player,
     settings: Option<Settings>,
@@ -525,14 +524,17 @@ impl World<'_> {
 
     fn read_broadcast_moves(&mut self) -> Vec<Move> {
         if self.stream.is_some() {
-            let moves_string = receive(self.stream.as_mut().unwrap());
+            let moves_string = self.stream.as_mut().unwrap().read_message().unwrap();
+            ron::de::from_str(&moves_string).unwrap()
+        } else {
+            vec![]
         }
-        vec![]
     }
 
     fn broadcast_moves(&mut self, moves: &[Move]) {
         if self.stream.is_some() {
-            broadcast(self.stream.as_mut().unwrap(), "fake message");
+            let message = ron::ser::to_string(&moves).unwrap();
+            self.stream.as_mut().unwrap().send_message(&message);
         }
     }
 
